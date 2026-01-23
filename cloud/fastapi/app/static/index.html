@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Control Room – PV Fleet</title>
+
+  <!-- ECharts -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#0b1220;
+      --panel:#0f1a2e;
+      --panel2:#101f37;
+      --text:#e8eefc;
+      --muted:#9fb0d0;
+      --ok:#25d18a;
+      --bad:#ff4d6d;
+      --warn:#ffcc00;
+      --accent:#6aa9ff;
+      --shadow: 0 20px 60px rgba(0,0,0,.35);
+      --r:18px;
+      --gap:14px;
+      --ease:cubic-bezier(.2,.8,.2,1);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;
+      color:var(--text);
+      background: radial-gradient(1200px 800px at 20% 0%, #16254a 0%, rgba(11,18,32,1) 55%) fixed;
+      overflow:hidden;
+    }
+
+    .app{
+      display:grid;
+      grid-template-columns: 320px 1fr;
+      height:100vh;
+      gap:var(--gap);
+      padding:var(--gap);
+    }
+
+    /* Sidebar */
+    .sidebar{
+      background: linear-gradient(180deg, rgba(15,26,46,.95), rgba(12,20,36,.90));
+      border:1px solid rgba(255,255,255,.06);
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+      padding:16px;
+      display:flex;
+      flex-direction:column;
+      min-width:280px;
+      position:relative;
+      overflow:hidden;
+    }
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      margin-bottom:14px;
+    }
+    .logo{
+      width:44px;height:44px;border-radius:14px;
+      background: radial-gradient(circle at 30% 20%, #7fb6ff 0%, #2f6cff 50%, #1a2a5a 100%);
+      box-shadow: 0 18px 40px rgba(85,140,255,.25);
+      position:relative;
+      overflow:hidden;
+    }
+    .logo:after{
+      content:"";
+      position:absolute; inset:-40%;
+      background: linear-gradient(120deg, rgba(255,255,255,.0), rgba(255,255,255,.25), rgba(255,255,255,.0));
+      transform: rotate(20deg);
+      animation: shine 4.6s var(--ease) infinite;
+    }
+    @keyframes shine{
+      0%{transform: translateX(-40%) rotate(20deg)}
+      45%{transform: translateX(40%) rotate(20deg)}
+      100%{transform: translateX(40%) rotate(20deg)}
+    }
+    .brand h1{
+      font-size:16px;margin:0;letter-spacing:.4px;
+    }
+    .brand .sub{
+      font-size:12px;color:var(--muted);margin-top:2px;
+    }
+
+    .search{
+      margin:10px 0 12px;
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.07);
+      background: rgba(255,255,255,.04);
+      color:var(--text);
+      outline:none;
+    }
+
+    .siteList{overflow:auto; padding-right:6px;}
+    .site{
+      display:flex; align-items:center; justify-content:space-between;
+      padding:12px 12px;
+      border-radius:16px;
+      border:1px solid rgba(255,255,255,.06);
+      background: rgba(255,255,255,.03);
+      cursor:pointer;
+      margin-bottom:10px;
+      transition: transform .25s var(--ease), background .25s var(--ease), border-color .25s var(--ease);
+    }
+    .site:hover{ transform: translateY(-2px); background: rgba(255,255,255,.05); border-color: rgba(120,170,255,.35);}
+    .site.active{ background: rgba(106,169,255,.12); border-color: rgba(106,169,255,.55); }
+    .site .left{display:flex;align-items:center;gap:10px;}
+    .dot{
+      width:10px;height:10px;border-radius:999px;
+      box-shadow: 0 0 0 6px rgba(0,0,0,.12);
+    }
+    .dot.ok{background:var(--ok); box-shadow: 0 0 0 6px rgba(37,209,138,.12);}
+    .dot.bad{background:var(--bad); box-shadow: 0 0 0 6px rgba(255,77,109,.12);}
+    .site .name{font-weight:700; font-size:13px;}
+    .site .meta{font-size:11px;color:var(--muted); margin-top:2px;}
+    .badge{
+      font-size:11px;
+      padding:6px 10px;
+      border-radius:999px;
+      background: rgba(255,255,255,.06);
+      border:1px solid rgba(255,255,255,.08);
+      color:var(--muted);
+      white-space:nowrap;
+    }
+
+    /* Main */
+    .main{
+      display:flex;
+      flex-direction:column;
+      gap:var(--gap);
+      overflow:hidden;
+    }
+
+    .topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .title{
+      background: rgba(255,255,255,.03);
+      border:1px solid rgba(255,255,255,.06);
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+      padding:16px 18px;
+      flex:1;
+      overflow:hidden;
+      position:relative;
+    }
+    .title h2{margin:0;font-size:18px;}
+    .title p{margin:6px 0 0; color:var(--muted); font-size:12px;}
+    .pulse{
+      position:absolute; right:-80px; top:-80px;
+      width:220px;height:220px;border-radius:50%;
+      background: radial-gradient(circle, rgba(106,169,255,.22) 0%, rgba(106,169,255,.0) 65%);
+      animation: breathe 3.2s var(--ease) infinite;
+      pointer-events:none;
+    }
+    @keyframes breathe{
+      0%,100%{transform: scale(.95)}
+      50%{transform: scale(1.12)}
+    }
+
+    .kpis{
+      display:grid;
+      grid-template-columns: repeat(4, minmax(220px, 1fr));
+      gap: var(--gap);
+      min-height:120px;
+    }
+    .card{
+      background: linear-gradient(180deg, rgba(16,31,55,.95), rgba(12,20,36,.90));
+      border:1px solid rgba(255,255,255,.06);
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+      padding:16px;
+      position:relative;
+      overflow:hidden;
+      transform: translateY(0);
+      transition: transform .25s var(--ease);
+    }
+    .card:hover{transform: translateY(-2px);}
+    .card .label{font-size:12px;color:var(--muted);}
+    .card .value{font-size:26px;font-weight:800;margin-top:10px;letter-spacing:.2px;}
+    .card .hint{font-size:11px;color:var(--muted);margin-top:8px;}
+    .spark{
+      position:absolute; inset:auto -50px -70px auto;
+      width:200px;height:200px;border-radius:50%;
+      background: radial-gradient(circle at 30% 30%, rgba(37,209,138,.28), rgba(37,209,138,0));
+      filter: blur(0px);
+      opacity:.9;
+      animation: float 5.4s var(--ease) infinite;
+    }
+    @keyframes float{
+      0%,100%{transform: translate(0,0)}
+      50%{transform: translate(-18px,-12px)}
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1.4fr .9fr;
+      gap: var(--gap);
+      flex:1;
+      overflow:hidden;
+    }
+    .chart{
+      background: linear-gradient(180deg, rgba(16,31,55,.95), rgba(12,20,36,.90));
+      border:1px solid rgba(255,255,255,.06);
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+      padding:14px;
+      overflow:hidden;
+      position:relative;
+    }
+    .chartHeader{
+      display:flex;justify-content:space-between;align-items:center;
+      padding:4px 6px 10px;
+    }
+    .chartHeader .h{font-weight:800;}
+    .chartHeader .s{font-size:12px;color:var(--muted);}
+    .chartBox{height:100%; min-height:360px;}
+    .list{
+      display:flex; flex-direction:column; gap:10px; overflow:auto;
+      padding-right:6px;
+      height:100%;
+    }
+    .evt{
+      padding:12px 12px;
+      border-radius:16px;
+      background: rgba(255,255,255,.03);
+      border:1px solid rgba(255,255,255,.06);
+      animation: pop .35s var(--ease);
+    }
+    @keyframes pop{
+      from{transform: translateY(6px); opacity:0}
+      to{transform: translateY(0); opacity:1}
+    }
+    .evt .t{font-weight:800;}
+    .evt .d{font-size:12px;color:var(--muted);margin-top:6px;}
+    .pill{
+      display:inline-block;
+      font-size:11px;
+      margin-top:10px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.05);
+      color:var(--muted);
+    }
+
+    /* Responsive */
+    @media (max-width: 1200px){
+      .kpis{grid-template-columns: repeat(2, 1fr);}
+      .grid{grid-template-columns: 1fr;}
+      body{overflow:auto;}
+      .app{height:auto; overflow:auto;}
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo"></div>
+      <div>
+        <h1>Control Room</h1>
+        <div class="sub">Fleet PV – live status & KPI</div>
+      </div>
+    </div>
+
+    <input id="q" class="search" placeholder="Cerca impianto (PV_001…)" />
+
+    <div id="siteList" class="siteList"></div>
+
+    <div style="margin-top:auto; padding-top:10px; color:var(--muted); font-size:12px;">
+      <div>Cloud: <b>100.73.160.84</b></div>
+      <div id="conn">WS: connecting…</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="title">
+        <div class="pulse"></div>
+        <h2 id="title">Seleziona un impianto</h2>
+        <p id="subtitle">Appena l’edge pubblica, comparirà qui automaticamente.</p>
+      </div>
+    </div>
+
+    <section class="kpis">
+      <div class="card"><div class="spark"></div><div class="label">Stato</div><div class="value" id="k_status">—</div><div class="hint" id="k_age">—</div></div>
+      <div class="card"><div class="label">Potenza AC</div><div class="value" id="k_pac">—</div><div class="hint">W (media ultimi punti)</div></div>
+      <div class="card"><div class="label">Irraggiamento POA</div><div class="value" id="k_poa">—</div><div class="hint">W/m²</div></div>
+      <div class="card"><div class="label">Health</div><div class="value" id="k_health">—</div><div class="hint">Telemetry freshness</div></div>
+    </section>
+
+    <section class="grid">
+      <div class="chart">
+        <div class="chartHeader">
+          <div>
+            <div class="h">Irraggiamento vs Potenza</div>
+            <div class="s">Aggiornamento live (serie ultimi minuti)</div>
+          </div>
+          <div class="pill" id="rangePill">range: 120m</div>
+        </div>
+        <div id="chart1" class="chartBox"></div>
+      </div>
+
+      <div class="chart">
+        <div class="chartHeader">
+          <div>
+            <div class="h">Eventi</div>
+            <div class="s">Alert & info (placeholder)</div>
+          </div>
+        </div>
+        <div id="events" class="list"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  let selected = null;
+  let sitesStatus = [];
+  let allSites = [];
+  let ws = null;
+
+  const chart = echarts.init($("chart1"));
+  const baseOption = {
+    grid: { left: 46, right: 16, top: 26, bottom: 34 },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type:'category', boundaryGap:false, axisLabel:{ color:'#9fb0d0'} },
+    yAxis: [
+      { type:'value', name:'W', axisLabel:{ color:'#9fb0d0'} },
+      { type:'value', name:'W/m²', axisLabel:{ color:'#9fb0d0'} }
+    ],
+    series: [
+      { name:'Potenza AC (W)', type:'line', smooth:true, showSymbol:false, data:[] },
+      { name:'POA (W/m²)', type:'line', smooth:true, showSymbol:false, yAxisIndex:1, data:[] }
+    ]
+  };
+  chart.setOption(baseOption);
+
+  function fmt(v, unit="") {
+    if (v === null || v === undefined) return "—";
+    if (typeof v !== "number") return v;
+    if (Math.abs(v) >= 1000 && unit==="W") return (v/1000).toFixed(2) + " kW";
+    return v.toFixed(0) + (unit?(" "+unit):"");
+  }
+
+  function setSelected(siteId){
+    selected = siteId;
+    $("title").innerText = `Impianto ${siteId}`;
+    renderSites();
+    refreshSelectedKpi();
+    fetchSeries();
+  }
+
+  function renderSites(){
+    const q = $("q").value.trim().toLowerCase();
+    const el = $("siteList");
+    el.innerHTML = "";
+    const list = allSites.filter(s => s.toLowerCase().includes(q));
+
+    if(list.length === 0){
+      el.innerHTML = `<div style="color:#9fb0d0;font-size:12px;padding:10px;">Nessun impianto ancora…</div>`;
+      return;
+    }
+
+    for(const sid of list){
+      const st = sitesStatus.find(x => x.site_id === sid);
+      const ok = st ? !!st.ok : false;
+      const age = st ? st.age_s : null;
+      const active = (sid === selected);
+
+      const row = document.createElement("div");
+      row.className = "site" + (active ? " active" : "");
+      row.onclick = () => setSelected(sid);
+
+      row.innerHTML = `
+        <div class="left">
+          <div class="dot ${ok ? "ok" : "bad"}"></div>
+          <div>
+            <div class="name">${sid}</div>
+            <div class="meta">${st ? ("age " + age + "s") : "no telemetry yet"}</div>
+          </div>
+        </div>
+        <div class="badge">${ok ? "ONLINE" : "OFFLINE"}</div>
+      `;
+      el.appendChild(row);
+    }
+  }
+
+  function pushEvent(title, desc, kind="info"){
+    const el = $("events");
+    const node = document.createElement("div");
+    node.className = "evt";
+    const stamp = new Date().toLocaleTimeString();
+    node.innerHTML = `
+      <div class="t">${title} <span style="color:#9fb0d0;font-weight:600;font-size:12px;">(${stamp})</span></div>
+      <div class="d">${desc}</div>
+      <div class="pill">${kind}</div>
+    `;
+    el.prepend(node);
+    // keep small list
+    while(el.children.length > 8) el.removeChild(el.lastChild);
+  }
+
+  function refreshSelectedKpi(){
+    if(!selected){
+      $("k_status").innerText="—";
+      $("k_age").innerText="—";
+      $("k_pac").innerText="—";
+      $("k_poa").innerText="—";
+      $("k_health").innerText="—";
+      return;
+    }
+    const st = sitesStatus.find(x => x.site_id === selected);
+    const ok = st ? !!st.ok : false;
+    const age = st ? st.age_s : null;
+
+    $("k_status").innerText = ok ? "ONLINE" : "OFFLINE";
+    $("k_status").style.color = ok ? "var(--ok)" : "var(--bad)";
+    $("k_age").innerText = st ? (`Ultimo dato: ${st.last_ts || "?"} | age ${age}s`) : "Nessun dato ancora";
+
+    const pac = st?.fields?.p_ac_w;
+    const poa = st?.fields?.poa_wm2;
+    $("k_pac").innerText = fmt(pac ?? null, "W");
+    $("k_poa").innerText = fmt(poa ?? null, "W/m²");
+    $("k_health").innerText = st ? (ok ? "OK" : "STALE") : "—";
+    $("k_health").style.color = st ? (ok ? "var(--ok)" : "var(--warn)") : "var(--muted)";
+  }
+
+  async function fetchSites(){
+    try{
+      const r = await fetch("/sites");
+      const j = await r.json();
+      allSites = j.sites || [];
+      if(!selected && allSites.length) setSelected(allSites[0]);
+      renderSites();
+    }catch(e){}
+  }
+
+  async function fetchSeries(){
+    if(!selected) return;
+    try{
+      const minutes = 120;
+      $("rangePill").innerText = `range: ${minutes}m`;
+      const r = await fetch(`/api/site/${selected}/series?minutes=${minutes}&every=10s`);
+      const j = await r.json();
+      const t = (j.t || []).map(x => new Date(x).toLocaleTimeString());
+      const pac = j.p_ac_w || [];
+      const poa = j.poa_wm2 || [];
+
+      chart.setOption({
+        xAxis: { data: t },
+        series: [
+          { data: pac },
+          { data: poa }
+        ]
+      }, { notMerge: true });
+
+    }catch(e){}
+  }
+
+  function connectWS(){
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(`${proto}://${location.host}/ws/status`);
+
+    ws.onopen = () => {
+      $("conn").innerText = "WS: connected";
+      pushEvent("Connessione", "WebSocket live status connesso.", "info");
+    };
+    ws.onclose = () => {
+      $("conn").innerText = "WS: reconnecting…";
+      pushEvent("Connessione", "WebSocket disconnesso. Riconnessione…", "warn");
+      setTimeout(connectWS, 1200);
+    };
+    ws.onmessage = (ev) => {
+      try{
+        const j = JSON.parse(ev.data);
+        sitesStatus = j.sites || [];
+        // se arrivano nuovi impianti li refreshiamo via /sites (autodiscovery)
+        const before = allSites.length;
+        fetchSites();
+        refreshSelectedKpi();
+        if(selected) fetchSeries();
+        if(allSites.length > before) pushEvent("Nuovo impianto", "Rilevato automaticamente da Influx.", "info");
+      }catch(e){}
+    };
+  }
+
+  $("q").addEventListener("input", renderSites);
+
+  window.addEventListener("resize", () => chart.resize());
+
+  // boot
+  fetchSites();
+  connectWS();
+</script>
+</body>
+</html>

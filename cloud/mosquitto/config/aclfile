@@ -1,0 +1,5 @@
+user edge_pv_001
+topic readwrite pv/#
+
+user cr_ingest
+topic read pv/+/telemetry

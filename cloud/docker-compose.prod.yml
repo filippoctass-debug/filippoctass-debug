@@ -1,0 +1,46 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "100.73.160.84:8883:8883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/certs:/mosquitto/certs
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8086:8086"
+    env_file:
+      - .env
+    volumes:
+      - ./influxdb/data:/var/lib/influxdb2
+      - ./influxdb/config:/etc/influxdb2
+
+  control-room-api:
+    image: ghcr.io/YOUR_ORG/control-room-api:latest
+    container_name: control-room-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - influxdb
+      - mosquitto
+    ports:
+      - "100.73.160.84:8000:8000"
+    volumes:
+      - ./mosquitto/certs:/mosquitto/certs:ro
+
+  watchtower-cloud:
+    image: containrrr/watchtower:1.7.1
+    container_name: watchtower-cloud
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 60 --cleanup
