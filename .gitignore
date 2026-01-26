@@ -28,3 +28,6 @@ cloud/influxdb/config/
 # ========================
 .DS_Store
 Thumbs.db
+
+# Mosquitto runtime data
+cloud/mosquitto/data/
