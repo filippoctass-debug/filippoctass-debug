@@ -1,0 +1,30 @@
+# ========================
+# Python
+# ========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+venv/
+
+# ========================
+# Docker / runtime
+# ========================
+*.log
+*.pid
+
+# ========================
+# InfluxDB (IMPORTANT)
+# ========================
+cloud/influxdb/data/
+cloud/influxdb/config/
+**/*.wal
+**/*.tsm
+
+# ========================
+# OS
+# ========================
+.DS_Store
+Thumbs.db
