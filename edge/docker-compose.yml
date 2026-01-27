@@ -4,11 +4,13 @@ services:
     image: edge-edge-driver
     container_name: edge-driver
     restart: unless-stopped
+    user: "0:0"
     env_file:
       - .env
     volumes:
       - ./data:/app/data
       - ./certs:/app/certs:ro
+
 
   watchtower-edge:
     image: containrrr/watchtower:1.7.1
