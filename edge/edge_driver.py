@@ -38,7 +38,7 @@ def drain(mq:mqtt.Client, topic:str, max_n:int=200)->int:
     con.commit(); con.close(); return sent
 
 def read_modbus(client:ModbusTcpClient)->Tuple[Dict[str,Any],Dict[str,Any]]:
-    rr=client.read_holding_registers(address=0, count=2, unit=1)
+    rr=client.read_holding_registers(address=0, count=2, slave=1)
     if rr.isError(): raise TimeoutError("Modbus read error")
     return {"p_ac_w": float(rr.registers[0]), "poa_wm2": float(rr.registers[1])}, {}
 
