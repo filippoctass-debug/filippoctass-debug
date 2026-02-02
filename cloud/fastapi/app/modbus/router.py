@@ -1,57 +1,49 @@
-﻿from __future__ import annotations
-
-import uuid
+﻿from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from typing import List
 
-from .models import ModbusConfig, ModbusDevice
-from .storage import load_config, save_config
+from app.storage.edge_config import get_site_config, set_site_config
 
-router = APIRouter(prefix="/api/modbus", tags=["modbus-config"])
+router = APIRouter(prefix="/api/edge", tags=["edge"])
 
+class Device(BaseModel):
+    name: str = Field(default="dev1")
+    host: str = Field(..., description="IP address or hostname")
+    port: int = Field(default=502, ge=1, le=65535)
+    unit_id: int = Field(default=1, ge=0, le=255)
 
-class ModbusConfigUpdate(BaseModel):
-    site_id: str = Field(..., description="Site/Edge identifier")
-    devices: List[ModbusDevice]
+class SiteConfig(BaseModel):
+    site_id: str
+    devices: List[Device] = Field(default_factory=list)
 
+@router.get("/{site_id}", response_model=SiteConfig)
+def api_get(site_id: str):
+    cfg = get_site_config(site_id)
+    return cfg
 
-@router.get("/sites/{site_id}", response_model=ModbusConfig)
-def get_site_modbus(site_id: str):
-    return load_config(site_id)
-
-
-@router.put("/sites/{site_id}", response_model=ModbusConfig)
-def put_site_modbus(site_id: str, payload: ModbusConfigUpdate):
-    if payload.site_id != site_id:
+@router.put("/{site_id}", response_model=SiteConfig)
+def api_put(site_id: str, body: SiteConfig):
+    if body.site_id != site_id:
         raise HTTPException(status_code=400, detail="site_id mismatch")
-    cfg = ModbusConfig(site_id=site_id, devices=payload.devices)
-    return save_config(cfg)
+    cfg = set_site_config(site_id, body.model_dump())
+    return cfg
 
+@router.post("/{site_id}/devices", response_model=SiteConfig)
+def api_add_device(site_id: str, dev: Device):
+    cfg = get_site_config(site_id)
+    cfg["site_id"] = site_id
+    cfg.setdefault("devices", [])
+    cfg["devices"].append(dev.model_dump())
+    cfg = set_site_config(site_id, cfg)
+    return cfg
 
-@router.post("/sites/{site_id}/device", response_model=ModbusConfig)
-def add_device(site_id: str, device: ModbusDevice):
-    cfg = load_config(site_id)
-    # se id vuoto o duplicato, genera uuid
-    ids = {d.id for d in cfg.devices}
-    if not device.id or device.id in ids:
-        device.id = str(uuid.uuid4())
-    cfg.devices.append(device)
-    return save_config(cfg)
-
-
-@router.delete("/sites/{site_id}/device/{device_id}", response_model=ModbusConfig)
-def delete_device(site_id: str, device_id: str):
-    cfg = load_config(site_id)
-    cfg.devices = [d for d in cfg.devices if d.id != device_id]
-    return save_config(cfg)
-
-
-@router.get("/sites/{site_id}/edge-env", response_model=dict)
-def get_edge_env(site_id: str):
-    cfg = load_config(site_id)
-    return {
-        "site_id": site_id,
-        "MODBUS_TARGETS": cfg.to_modbus_targets_env(),
-        "devices_count": len([d for d in cfg.devices if d.enabled]),
-    }
+@router.delete("/{site_id}/devices/{idx}", response_model=SiteConfig)
+def api_del_device(site_id: str, idx: int):
+    cfg = get_site_config(site_id)
+    devices = cfg.get("devices", [])
+    if idx < 0 or idx >= len(devices):
+        raise HTTPException(status_code=404, detail="device index not found")
+    devices.pop(idx)
+    cfg["devices"] = devices
+    cfg = set_site_config(site_id, cfg)
+    return cfg

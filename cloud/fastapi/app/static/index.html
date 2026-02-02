@@ -716,6 +716,120 @@
 })();
 </script>
 <!-- =================== /Modbus Devices (Cloud Dashboard) =================== -->
+<script>
+async function apiGetEdgeCfg(siteId){
+  const r = await fetch(`/api/edge/${encodeURIComponent(siteId)}`);
+  if(!r.ok) throw new Error(`GET failed: ${r.status}`);
+  return await r.json();
+}
+async function apiPutEdgeCfg(siteId, cfg){
+  const r = await fetch(`/api/edge/${encodeURIComponent(siteId)}`, {
+    method: "PUT",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(cfg)
+  });
+  if(!r.ok) throw new Error(`PUT failed: ${r.status}`);
+  return await r.json();
+}
+
+let currentCfg = null;
+
+function renderCfg(){
+  const list = document.getElementById("cfgList");
+  list.innerHTML = "";
+  const msg = document.getElementById("cfgMsg");
+
+  if(!currentCfg){
+    msg.textContent = "No config loaded.";
+    return;
+  }
+  msg.textContent = `Loaded ${currentCfg.devices.length} device(s).`;
+
+  currentCfg.devices.forEach((d, i) => {
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    row.style.justifyContent = "space-between";
+    row.style.padding = "8px 10px";
+    row.style.marginBottom = "8px";
+    row.style.borderRadius = "12px";
+    row.style.border = "1px solid rgba(255,255,255,.06)";
+    row.style.background = "rgba(255,255,255,.03)";
+
+    const left = document.createElement("div");
+    left.innerHTML = `<div style="font-weight:700">${d.name}</div>
+      <div style="color:var(--muted)">${d.host}:${d.port}  unit=${d.unit_id}</div>`;
+
+    const del = document.createElement("button");
+    del.textContent = "Del";
+    del.style.border = "0";
+    del.style.borderRadius = "10px";
+    del.style.padding = "8px 10px";
+    del.style.background = "rgba(255,77,109,.18)";
+    del.style.color = "var(--text)";
+    del.style.cursor = "pointer";
+    del.onclick = () => { currentCfg.devices.splice(i,1); renderCfg(); };
+
+    row.appendChild(left);
+    row.appendChild(del);
+    list.appendChild(row);
+  });
+}
+
+async function loadCfg(){
+  const siteId = document.getElementById("cfgSiteId").value.trim();
+  const msg = document.getElementById("cfgMsg");
+  if(!siteId){ msg.textContent="Insert site_id."; return; }
+
+  try{
+    currentCfg = await apiGetEdgeCfg(siteId);
+    if(!currentCfg.devices) currentCfg.devices = [];
+    renderCfg();
+  }catch(e){
+    msg.textContent = `Load error: ${e.message}`;
+  }
+}
+
+async function saveCfg(){
+  const siteId = document.getElementById("cfgSiteId").value.trim();
+  const msg = document.getElementById("cfgMsg");
+  if(!siteId || !currentCfg){ msg.textContent="Load a config first."; return; }
+  currentCfg.site_id = siteId;
+
+  try{
+    currentCfg = await apiPutEdgeCfg(siteId, currentCfg);
+    renderCfg();
+    msg.textContent = "Saved.";
+  }catch(e){
+    msg.textContent = `Save error: ${e.message}`;
+  }
+}
+
+function addDevice(){
+  const msg = document.getElementById("cfgMsg");
+  if(!currentCfg){ msg.textContent="Load a config first."; return; }
+
+  const name = document.getElementById("devName").value.trim() || `dev${currentCfg.devices.length+1}`;
+  const host = document.getElementById("devHost").value.trim();
+  const port = parseInt(document.getElementById("devPort").value.trim() || "502", 10);
+  const unit = parseInt(document.getElementById("devUnit").value.trim() || "1", 10);
+
+  if(!host){ msg.textContent="host required."; return; }
+  currentCfg.devices.push({name, host, port, unit_id: unit});
+  renderCfg();
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  const loadBtn = document.getElementById("cfgLoadBtn");
+  const saveBtn = document.getElementById("cfgSaveBtn");
+  const addBtn  = document.getElementById("cfgAddBtn");
+  if(loadBtn) loadBtn.onclick = loadCfg;
+  if(saveBtn) saveBtn.onclick = saveCfg;
+  if(addBtn)  addBtn.onclick  = addDevice;
+});
+</script>
 </body>
 </html>
+
+
 
