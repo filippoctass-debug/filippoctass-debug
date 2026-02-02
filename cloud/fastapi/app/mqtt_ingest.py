@@ -1,3 +1,22 @@
+﻿def write_edge_status(influx, site_id: str, payload: dict):
+    # writes edge connectivity status to influx measurement 'edge_status'
+    # payload is the mqtt json received from edge: {site_id, mqtt_connected, edge_id, hostname, ...}
+    from influxdb_client import Point, WritePrecision
+    p = Point("edge_status").tag("site_id", site_id)
+
+    # write a few boolean/string fields (strings as fields are ok)
+    if "mqtt_connected" in payload:
+        p = p.field("mqtt_connected", bool(payload.get("mqtt_connected")))
+    if "edge_id" in payload:
+        p = p.field("edge_id", str(payload.get("edge_id")))
+    if "hostname" in payload:
+        p = p.field("hostname", str(payload.get("hostname")))
+
+    # Use ts if provided (seconds), else now
+    ts = payload.get("ts")
+    if isinstance(ts, int):
+        p = p.time(ts * 1_000_000_000, WritePrecision.NS)
+    influx.write_api().write(bucket=os.getenv("INFLUX_BUCKET",""), org=os.getenv("INFLUX_ORG",""), record=p)
 import json, os, threading, time
 from typing import Optional
 import paho.mqtt.client as mqtt
@@ -67,3 +86,4 @@ def start_ingest():
     if _thread and _thread.is_alive(): return
     _thread=threading.Thread(target=_run, daemon=True)
     _thread.start()
+
