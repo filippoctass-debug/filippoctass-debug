@@ -1,9 +1,9 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="it">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Control Room – PV Fleet</title>
+  <title>Control Room â€“ PV Fleet</title>
 
   <!-- ECharts -->
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
@@ -268,17 +268,17 @@
       <div class="logo"></div>
       <div>
         <h1>Control Room</h1>
-        <div class="sub">Fleet PV – live status & KPI</div>
+        <div class="sub">Fleet PV â€“ live status & KPI</div>
       </div>
     </div>
 
-    <input id="q" class="search" placeholder="Cerca impianto (PV_001…)" />
+    <input id="q" class="search" placeholder="Cerca impianto (PV_001â€¦)" />
 
     <div id="siteList" class="siteList"></div>
 
     <div style="margin-top:auto; padding-top:10px; color:var(--muted); font-size:12px;">
       <div>Cloud: <b>100.73.160.84</b></div>
-      <div id="conn">WS: connecting…</div>
+      <div id="conn">WS: connectingâ€¦</div>
     </div>
   </aside>
 
@@ -287,15 +287,15 @@
       <div class="title">
         <div class="pulse"></div>
         <h2 id="title">Seleziona un impianto</h2>
-        <p id="subtitle">Appena l’edge pubblica, comparirà qui automaticamente.</p>
+        <p id="subtitle">Appena lâ€™edge pubblica, comparirÃ  qui automaticamente.</p>
       </div>
     </div>
 
     <section class="kpis">
-      <div class="card"><div class="spark"></div><div class="label">Stato</div><div class="value" id="k_status">—</div><div class="hint" id="k_age">—</div></div>
-      <div class="card"><div class="label">Potenza AC</div><div class="value" id="k_pac">—</div><div class="hint">W (media ultimi punti)</div></div>
-      <div class="card"><div class="label">Irraggiamento POA</div><div class="value" id="k_poa">—</div><div class="hint">W/m²</div></div>
-      <div class="card"><div class="label">Health</div><div class="value" id="k_health">—</div><div class="hint">Telemetry freshness</div></div>
+      <div class="card"><div class="spark"></div><div class="label">Stato</div><div class="value" id="k_status">â€”</div><div class="hint" id="k_age">â€”</div></div>
+      <div class="card"><div class="label">Potenza AC</div><div class="value" id="k_pac">â€”</div><div class="hint">W (media ultimi punti)</div></div>
+      <div class="card"><div class="label">Irraggiamento POA</div><div class="value" id="k_poa">â€”</div><div class="hint">W/mÂ²</div></div>
+      <div class="card"><div class="label">Health</div><div class="value" id="k_health">â€”</div><div class="hint">Telemetry freshness</div></div>
     </section>
 
     <section class="grid">
@@ -338,17 +338,17 @@
     xAxis: { type:'category', boundaryGap:false, axisLabel:{ color:'#9fb0d0'} },
     yAxis: [
       { type:'value', name:'W', axisLabel:{ color:'#9fb0d0'} },
-      { type:'value', name:'W/m²', axisLabel:{ color:'#9fb0d0'} }
+      { type:'value', name:'W/mÂ²', axisLabel:{ color:'#9fb0d0'} }
     ],
     series: [
       { name:'Potenza AC (W)', type:'line', smooth:true, showSymbol:false, data:[] },
-      { name:'POA (W/m²)', type:'line', smooth:true, showSymbol:false, yAxisIndex:1, data:[] }
+      { name:'POA (W/mÂ²)', type:'line', smooth:true, showSymbol:false, yAxisIndex:1, data:[] }
     ]
   };
   chart.setOption(baseOption);
 
   function fmt(v, unit="") {
-    if (v === null || v === undefined) return "—";
+    if (v === null || v === undefined) return "â€”";
     if (typeof v !== "number") return v;
     if (Math.abs(v) >= 1000 && unit==="W") return (v/1000).toFixed(2) + " kW";
     return v.toFixed(0) + (unit?(" "+unit):"");
@@ -369,7 +369,7 @@
     const list = allSites.filter(s => s.toLowerCase().includes(q));
 
     if(list.length === 0){
-      el.innerHTML = `<div style="color:#9fb0d0;font-size:12px;padding:10px;">Nessun impianto ancora…</div>`;
+      el.innerHTML = `<div style="color:#9fb0d0;font-size:12px;padding:10px;">Nessun impianto ancoraâ€¦</div>`;
       return;
     }
 
@@ -414,11 +414,11 @@
 
   function refreshSelectedKpi(){
     if(!selected){
-      $("k_status").innerText="—";
-      $("k_age").innerText="—";
-      $("k_pac").innerText="—";
-      $("k_poa").innerText="—";
-      $("k_health").innerText="—";
+      $("k_status").innerText="â€”";
+      $("k_age").innerText="â€”";
+      $("k_pac").innerText="â€”";
+      $("k_poa").innerText="â€”";
+      $("k_health").innerText="â€”";
       return;
     }
     const st = sitesStatus.find(x => x.site_id === selected);
@@ -432,8 +432,8 @@
     const pac = st?.fields?.p_ac_w;
     const poa = st?.fields?.poa_wm2;
     $("k_pac").innerText = fmt(pac ?? null, "W");
-    $("k_poa").innerText = fmt(poa ?? null, "W/m²");
-    $("k_health").innerText = st ? (ok ? "OK" : "STALE") : "—";
+    $("k_poa").innerText = fmt(poa ?? null, "W/mÂ²");
+    $("k_health").innerText = st ? (ok ? "OK" : "STALE") : "â€”";
     $("k_health").style.color = st ? (ok ? "var(--ok)" : "var(--warn)") : "var(--muted)";
   }
 
@@ -478,8 +478,8 @@
       pushEvent("Connessione", "WebSocket live status connesso.", "info");
     };
     ws.onclose = () => {
-      $("conn").innerText = "WS: reconnecting…";
-      pushEvent("Connessione", "WebSocket disconnesso. Riconnessione…", "warn");
+      $("conn").innerText = "WS: reconnectingâ€¦";
+      pushEvent("Connessione", "WebSocket disconnesso. Riconnessioneâ€¦", "warn");
       setTimeout(connectWS, 1200);
     };
     ws.onmessage = (ev) => {
@@ -504,5 +504,218 @@
   fetchSites();
   connectWS();
 </script>
+<!-- ===================== Modbus Devices (Cloud Dashboard) ===================== -->
+<section style="margin-top:24px;padding:16px;border:1px solid #ddd;border-radius:8px;">
+  <h2 style="margin:0 0 10px 0;">Modbus Devices</h2>
+
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <label>Site ID:
+      <input id="mb_site_id" type="text" placeholder="PV_001" style="padding:6px;min-width:180px;">
+    </label>
+    <button id="mb_load" style="padding:6px 10px;">Load</button>
+    <button id="mb_save" style="padding:6px 10px;">Save</button>
+  </div>
+
+  <div style="margin-top:10px;">
+    <button id="mb_add" style="padding:6px 10px;">+ Add device</button>
+  </div>
+
+  <div style="overflow:auto;margin-top:10px;">
+    <table id="mb_table" border="1" cellpadding="6" style="border-collapse:collapse;min-width:900px;">
+      <thead>
+        <tr>
+          <th>Enabled</th>
+          <th>Name</th>
+          <th>Host</th>
+          <th>Port</th>
+          <th>Unit ID</th>
+          <th>ID</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div style="margin-top:12px;">
+    <div style="font-weight:bold;">Generated for Edge (.env):</div>
+    <div style="font-family:monospace;white-space:pre-wrap;background:#f7f7f7;padding:10px;border-radius:6px;">
+      MODBUS_TARGETS=<span id="mb_env_targets"></span>
+    </div>
+  </div>
+
+  <div id="mb_msg" style="margin-top:10px;color:#444;"></div>
+</section>
+
+<script>
+(function() {
+  const siteInput = document.getElementById('mb_site_id');
+  const btnLoad = document.getElementById('mb_load');
+  const btnSave = document.getElementById('mb_save');
+  const btnAdd  = document.getElementById('mb_add');
+  const tbody = document.querySelector('#mb_table tbody');
+  const envSpan = document.getElementById('mb_env_targets');
+  const msg = document.getElementById('mb_msg');
+
+  function setMsg(t, isErr=false) {
+    msg.textContent = t;
+    msg.style.color = isErr ? '#b00020' : '#444';
+  }
+
+  function rowTemplate(d) {
+    const tr = document.createElement('tr');
+
+    const tdEnabled = document.createElement('td');
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.checked = !!d.enabled;
+    tdEnabled.appendChild(chk);
+
+    const tdName = document.createElement('td');
+    const inName = document.createElement('input');
+    inName.value = d.name || '';
+    inName.style.width = '160px';
+    tdName.appendChild(inName);
+
+    const tdHost = document.createElement('td');
+    const inHost = document.createElement('input');
+    inHost.value = d.host || '';
+    inHost.style.width = '160px';
+    tdHost.appendChild(inHost);
+
+    const tdPort = document.createElement('td');
+    const inPort = document.createElement('input');
+    inPort.type = 'number';
+    inPort.min = '1';
+    inPort.max = '65535';
+    inPort.value = (d.port ?? 502);
+    inPort.style.width = '90px';
+    tdPort.appendChild(inPort);
+
+    const tdUnit = document.createElement('td');
+    const inUnit = document.createElement('input');
+    inUnit.type = 'number';
+    inUnit.min = '0';
+    inUnit.max = '255';
+    inUnit.value = (d.unit_id ?? 1);
+    inUnit.style.width = '90px';
+    tdUnit.appendChild(inUnit);
+
+    const tdId = document.createElement('td');
+    const inId = document.createElement('input');
+    inId.value = d.id || '';
+    inId.placeholder = '(auto)';
+    inId.style.width = '260px';
+    tdId.appendChild(inId);
+
+    const tdActions = document.createElement('td');
+    const del = document.createElement('button');
+    del.textContent = 'Remove';
+    del.style.padding='4px 8px';
+    del.addEventListener('click', () => {
+      tr.remove();
+      updateEnvPreview();
+    });
+    tdActions.appendChild(del);
+
+    tr.appendChild(tdEnabled);
+    tr.appendChild(tdName);
+    tr.appendChild(tdHost);
+    tr.appendChild(tdPort);
+    tr.appendChild(tdUnit);
+    tr.appendChild(tdId);
+    tr.appendChild(tdActions);
+
+    // store getters
+    tr._getDevice = () => ({
+      id: inId.value.trim(),
+      name: inName.value.trim() || 'device',
+      host: inHost.value.trim(),
+      port: Number(inPort.value || 502),
+      unit_id: Number(inUnit.value || 1),
+      enabled: chk.checked
+    });
+
+    // update preview on change
+    [chk, inName, inHost, inPort, inUnit, inId].forEach(el => el.addEventListener('input', updateEnvPreview));
+
+    return tr;
+  }
+
+  function devicesFromTable() {
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    return rows.map(r => r._getDevice()).filter(d => d.host);
+  }
+
+  function updateEnvPreview() {
+    const devs = devicesFromTable().filter(d => d.enabled);
+    const parts = devs.map(d => ${d.host}::);
+    envSpan.textContent = parts.join(',');
+  }
+
+  async function loadSite() {
+    const siteId = siteInput.value.trim();
+    if (!siteId) return setMsg('Insert Site ID', true);
+
+    setMsg('Loading...');
+    try {
+      const r = await fetch(/api/modbus/sites/);
+      if (!r.ok) throw new Error(HTTP );
+      const cfg = await r.json();
+
+      tbody.innerHTML = '';
+      (cfg.devices || []).forEach(d => tbody.appendChild(rowTemplate(d)));
+      updateEnvPreview();
+      setMsg('Loaded');
+    } catch (e) {
+      setMsg('Load error: ' + e.message, true);
+    }
+  }
+
+  async function saveSite() {
+    const siteId = siteInput.value.trim();
+    if (!siteId) return setMsg('Insert Site ID', true);
+
+    const devices = devicesFromTable().map(d => {
+      // backend accetta id vuoto: lo genera
+      return d;
+    });
+
+    setMsg('Saving...');
+    try {
+      const payload = { site_id: siteId, devices };
+      const r = await fetch(/api/modbus/sites/, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!r.ok) throw new Error(HTTP );
+      const cfg = await r.json();
+
+      // refresh normalized data (ids)
+      tbody.innerHTML = '';
+      (cfg.devices || []).forEach(d => tbody.appendChild(rowTemplate(d)));
+      updateEnvPreview();
+      setMsg('Saved');
+    } catch (e) {
+      setMsg('Save error: ' + e.message, true);
+    }
+  }
+
+  function addEmpty() {
+    tbody.appendChild(rowTemplate({ enabled:true, name:'device', host:'', port:502, unit_id:1, id:'' }));
+    updateEnvPreview();
+  }
+
+  btnLoad.addEventListener('click', loadSite);
+  btnSave.addEventListener('click', saveSite);
+  btnAdd.addEventListener('click', addEmpty);
+
+  // default helper
+  if (!siteInput.value) siteInput.value = 'PV_001';
+})();
+</script>
+<!-- =================== /Modbus Devices (Cloud Dashboard) =================== -->
 </body>
 </html>
+
