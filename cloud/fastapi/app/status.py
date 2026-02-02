@@ -4,6 +4,14 @@ from app.influx import get_influx_client
 from app.edge_status import get_edge_status
 
 def get_control_room_status(lookback_minutes:int=10):
+    # prefer edge_status (mqtt connectivity), fallback to pv_telemetry (legacy)
+    try:
+        es = get_edge_status(lookback_minutes=max(lookback_minutes, 60))
+        if es.get("sites"):
+            return es
+    except Exception:
+        pass
+
     org=os.getenv("INFLUX_ORG","")
     bucket=os.getenv("INFLUX_BUCKET","")
     max_age=int(os.getenv("STATUS_MAX_AGE_SECONDS","180"))
@@ -30,4 +38,3 @@ from(bucket: "{bucket}")
             sites[sid]["fields"][r.get_field()]=r.get_value()
             sites[sid]["ok"]=age<=max_age
     return {"generated_at": now.isoformat(), "sites": list(sites.values())}
-
