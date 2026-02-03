@@ -1,7 +1,6 @@
-services:
+﻿services:
   mosquitto:
     image: eclipse-mosquitto:2.0
-    container_name: mosquitto
     restart: unless-stopped
     ports:
       - "100.73.160.84:8883:8883"
@@ -15,7 +14,6 @@ services:
 
   influxdb:
     image: influxdb:2.7
-    container_name: influxdb
     restart: unless-stopped
     ports:
       - "127.0.0.1:8086:8086"
@@ -27,8 +25,7 @@ services:
 
   control-room-api:
     build: ./fastapi
-    image: cloud-control-room-api
-    container_name: control-room-api
+    image: ghcr.io/filippoctass-debug/control-room-api:latest
     restart: unless-stopped
     env_file:
       - .env
@@ -42,8 +39,10 @@ services:
 
   watchtower-cloud:
     image: containrrr/watchtower:1.7.1
-    container_name: watchtower-cloud
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     command: --interval 60 --cleanup
+
+
+
