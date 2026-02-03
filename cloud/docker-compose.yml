@@ -11,7 +11,6 @@
       - ./mosquitto/log:/mosquitto/log
       - ./mosquitto/certs:/app/certs:ro
 
-
   influxdb:
     image: influxdb:2.7
     restart: unless-stopped
@@ -24,7 +23,6 @@
       - ./influxdb/config:/etc/influxdb2
 
   control-room-api:
-    build: ./fastapi
     image: ghcr.io/filippoctass-debug/control-room-api:latest
     restart: unless-stopped
     env_file:
@@ -36,13 +34,12 @@
       - "100.73.160.84:8000:8000"
     volumes:
       - ./mosquitto/certs:/mosquitto/certs:ro
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
 
   watchtower-cloud:
     image: containrrr/watchtower:1.4.0
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: --interval 60 --cleanup
-
-
-
+    command: --interval 60 --cleanup --label-enable
