@@ -1,4 +1,4 @@
-﻿import json, os, sqlite3, time, socket
+import json, os, sqlite3, time, socket
 from dataclasses import dataclass
 from typing import Any, Dict, Tuple, List, Optional
 from pymodbus.client import ModbusTcpClient
