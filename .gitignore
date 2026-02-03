@@ -31,3 +31,6 @@ Thumbs.db
 
 # Mosquitto runtime data
 cloud/mosquitto/data/
+
+*.bak
+
