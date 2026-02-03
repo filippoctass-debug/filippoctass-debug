@@ -9,13 +9,13 @@
       - ./mosquitto/certs:/mosquitto/certs
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
-      - ./mosquitto/certs:/app/certs:ro
 
   influxdb:
     image: influxdb:2.7
     restart: unless-stopped
+    # DEV: puoi esporre anche su 18086 se vuoi la UI “spostata”
     ports:
-      - "127.0.0.1:8086:8086"
+      - "127.0.0.1:18086:8086"
     env_file:
       - .env
     volumes:
@@ -23,7 +23,8 @@
       - ./influxdb/config:/etc/influxdb2
 
   control-room-api:
-    image: ghcr.io/filippoctass-debug/control-room-api:latest
+    build: ./fastapi
+    image: cloud-control-room-api:dev
     restart: unless-stopped
     env_file:
       - .env
@@ -33,11 +34,13 @@
     ports:
       - "100.73.160.84:8000:8000"
     volumes:
+      # DEV: codice live
+      - ./fastapi/app:/app/app
       - ./mosquitto/certs:/mosquitto/certs:ro
-    labels:
-      - "com.centurylinklabs.watchtower.enable=true"
 
+  # DEV: di default NON avviare watchtower
   watchtower-cloud:
+    profiles: ["watchtower"]
     image: containrrr/watchtower:1.7.1
     restart: unless-stopped
     volumes:
@@ -45,4 +48,3 @@
     environment:
       - DOCKER_API_VERSION=1.44
     command: --interval 60 --cleanup --label-enable
-

@@ -9,10 +9,13 @@
       - ./mosquitto/certs:/mosquitto/certs
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
+      # se ti serve anche qui (opzionale)
+      - ./mosquitto/certs:/app/certs:ro
 
   influxdb:
     image: influxdb:2.7
     restart: unless-stopped
+    # PROD: accesso solo locale host
     ports:
       - "127.0.0.1:8086:8086"
     env_file:
@@ -33,12 +36,17 @@
       - "100.73.160.84:8000:8000"
     volumes:
       - ./mosquitto/certs:/mosquitto/certs:ro
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
 
   watchtower-cloud:
     image: containrrr/watchtower:1.7.1
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: --interval 60 --cleanup
-
-
+    environment:
+      - DOCKER_API_VERSION=1.44
+      # 👇 NECESSARIO se l’immagine GHCR è privata o richiede auth
+      - REPO_USER=${GHCR_USER}
+      - REPO_PASS=${GHCR_TOKEN}
+    command: --interval 60 --cleanup --label-enable
