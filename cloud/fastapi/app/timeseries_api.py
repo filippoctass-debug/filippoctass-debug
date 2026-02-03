@@ -4,29 +4,24 @@ from app.influx import get_influx_client
 
 router = APIRouter()
 
+
 @router.get("/site/{site_id}/series")
 def site_series(site_id: str, minutes: int = 120, every: str = "10s"):
-    """
-    Ritorna serie recenti per un impianto:
-    - p_ac_w
-    - poa_wm2
-    """
+
     org = os.getenv("INFLUX_ORG", "")
     bucket = os.getenv("INFLUX_BUCKET", "")
     c = get_influx_client()
 
-    # Nota: dopo pivot() non esistono più _field/_value: diventano colonne (p_ac_w, poa_wm2).
-    # Quindi NON usare record.get_field() su record pivotati.
     flux = f'''
-from(bucket: "{bucket}")
-  |> range(start: -{minutes}m)
-  |> filter(fn: (r) => r._measurement == "pv_telemetry")
-  |> filter(fn: (r) => r.site_id == "{site_id}")
-  |> filter(fn: (r) => r._field == "p_ac_w" or r._field == "poa_wm2")
-  |> aggregateWindow(every: {every}, fn: last, createEmpty: false)
-  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
-  |> keep(columns: ["_time", "p_ac_w", "poa_wm2"])
-'''
+    from(bucket: "{bucket}")
+      |> range(start: -{minutes}m)
+      |> filter(fn: (r) => r._measurement == "pv_telemetry")
+      |> filter(fn: (r) => r.site_id == "{site_id}")
+      |> filter(fn: (r) => r._field == "p_ac_w" or r._field == "poa_wm2")
+      |> aggregateWindow(every: {every}, fn: mean, createEmpty: false)
+      |> pivot(rowKey:["_time"], columnKey:["_field"], valueColumn:"_value")
+      |> keep(columns: ["_time","p_ac_w","poa_wm2"])
+    '''
 
     tables = c.query_api().query(flux, org=org)
 

@@ -1,0 +1,10 @@
+.env
+*.flux
+tmp.flux
+.watchtower-docker/
+config.watchtower.json
+influxdb_BACKUP_*/
+mosquitto/certs/*.srl
+mosquitto/certs/*.csr
+mosquitto/certs/*.cnf
+../edge/*.bak
