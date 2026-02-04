@@ -26,9 +26,11 @@ log = logging.getLogger("edge-driver")
 # ------------------------
 DB_PATH = os.getenv("BUFFER_DB", "/app/data/buffer.sqlite3")
 
+
 def env_bool(name: str, default: bool = False) -> bool:
     v = os.getenv(name)
     return default if v is None else v.strip().lower() in ("1", "true", "yes", "y", "on")
+
 
 def hostname() -> str:
     try:
@@ -36,8 +38,10 @@ def hostname() -> str:
     except Exception:
         return "unknown"
 
+
 def now_ts() -> int:
     return int(time.time())
+
 
 def init_db() -> None:
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -55,12 +59,14 @@ def init_db() -> None:
     con.commit()
     con.close()
 
+
 def enqueue(topic: str, payload: Dict[str, Any]) -> None:
     txt = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     con = sqlite3.connect(DB_PATH, timeout=10)
     con.execute("INSERT INTO outbox(ts, topic, payload) VALUES(?,?,?)", (now_ts(), topic, txt))
     con.commit()
     con.close()
+
 
 def drain(mq: mqtt.Client, max_n: int = 200) -> int:
     sent = 0
@@ -83,6 +89,7 @@ def drain(mq: mqtt.Client, max_n: int = 200) -> int:
     con.close()
     return sent
 
+
 # ------------------------
 # Modbus
 # ------------------------
@@ -92,6 +99,7 @@ class ModbusTarget:
     port: int
     unit_id: int
     name: str
+
 
 def parse_targets() -> List[ModbusTarget]:
     """
@@ -123,6 +131,7 @@ def parse_targets() -> List[ModbusTarget]:
     unit = int(os.getenv("MODBUS_UNIT_ID", "1"))
     return [ModbusTarget(host=host, port=port, unit_id=unit, name="dev1")]
 
+
 def read_modbus_one(t: ModbusTarget) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     mb = ModbusTcpClient(host=t.host, port=t.port, timeout=2)
     if not mb.connect():
@@ -143,6 +152,7 @@ def read_modbus_one(t: ModbusTarget) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         "device": t.name,
     }
     return fields, tags
+
 
 # ------------------------
 # Config
@@ -171,13 +181,13 @@ class Cfg:
 
     modbus_targets: List[ModbusTarget]
 
+
 def get_cfg() -> Cfg:
     site_id = os.getenv("SITE_ID", "PV_001").strip()
     client_id = os.getenv("MQTT_CLIENT_ID", f"edge-{site_id}").strip()
 
     topic_base = os.getenv("MQTT_TOPIC_BASE", "pv").strip()
 
-    # Prefer explicit topics (come nel tuo .env edge)
     topic_pub = os.getenv("MQTT_PUB_TOPIC", f"{topic_base}/{site_id}/telemetry").strip()
     topic_status = os.getenv("MQTT_STATUS_TOPIC", f"{topic_base}/{site_id}/status").strip()
     topic_cmd = os.getenv("MQTT_CMD_TOPIC", f"{topic_base}/{site_id}/cmd").strip()
@@ -193,6 +203,8 @@ def get_cfg() -> Cfg:
 
         mqtt_ca=os.getenv("MQTT_TLS_CA", "/certs/ca.crt").strip(),
         mqtt_insecure=env_bool("MQTT_TLS_INSECURE", False),
+        # Nota: con paho SNI/verify usa l'host passato a connect().
+        # mqtt_servername lo teniamo per futura evoluzione / chiarezza.
         mqtt_servername=(os.getenv("MQTT_TLS_SERVERNAME") or "").strip() or None,
         mqtt_tls_min=(os.getenv("MQTT_TLS_MIN") or "").strip() or None,  # es: tlsv1.2
 
@@ -205,14 +217,18 @@ def get_cfg() -> Cfg:
         modbus_targets=parse_targets(),
     )
 
+
 # ------------------------
 # MQTT helpers
 # ------------------------
 def build_tls_context(cfg: Cfg) -> ssl.SSLContext:
+    # carica CA e prepara contesto client
     ctx = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH, cafile=cfg.mqtt_ca)
 
+    # Richiedi sempre cert valido rispetto alla CA
+    ctx.verify_mode = ssl.CERT_REQUIRED
+
     # TLS min version (opzionale)
-    # MQTT_TLS_MIN=tlsv1.2
     if cfg.mqtt_tls_min:
         v = cfg.mqtt_tls_min.lower().replace(" ", "")
         if v in ("tlsv1.2", "tls1.2", "1.2"):
@@ -220,15 +236,17 @@ def build_tls_context(cfg: Cfg) -> ssl.SSLContext:
         elif v in ("tlsv1.3", "tls1.3", "1.3"):
             ctx.minimum_version = ssl.TLSVersion.TLSv1_3
 
-    # Insecure: disabilita hostname verification (utile quando ti connetti via IP ma cert CN è "mosquitto")
-    if cfg.mqtt_insecure:
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_REQUIRED
+    # Hostname verification:
+    # - se ti connetti via IP ma il cert ha CN=mosquitto => fallisce
+    # - con MQTT_TLS_INSECURE=true replichi `mosquitto_pub --insecure`
+    ctx.check_hostname = not cfg.mqtt_insecure
 
     return ctx
 
+
 def safe_json(payload: Dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
 
 # ------------------------
 # Main
@@ -237,10 +255,19 @@ def main() -> None:
     cfg = get_cfg()
     init_db()
 
-    log.info("Starting edge-driver site_id=%s client_id=%s mqtt=%s:%s",
-             cfg.site_id, cfg.client_id, cfg.mqtt_host, cfg.mqtt_port)
+    log.info(
+        "Starting edge-driver site_id=%s client_id=%s mqtt=%s:%s insecure=%s ca=%s",
+        cfg.site_id, cfg.client_id, cfg.mqtt_host, cfg.mqtt_port,
+        cfg.mqtt_insecure, cfg.mqtt_ca
+    )
+    if cfg.mqtt_servername:
+        log.info("MQTT_TLS_SERVERNAME=%s (nota: paho usa MQTT_HOST per SNI/verify)", cfg.mqtt_servername)
+
     log.info("Topics pub=%s status=%s cmd=%s", cfg.topic_pub, cfg.topic_status, cfg.topic_cmd)
-    log.info("Targets: %s", ", ".join([f"{t.name}@{t.host}:{t.port} unit={t.unit_id}" for t in cfg.modbus_targets]) or "(none)")
+    log.info(
+        "Targets: %s",
+        ", ".join([f"{t.name}@{t.host}:{t.port} unit={t.unit_id}" for t in cfg.modbus_targets]) or "(none)"
+    )
 
     mq = mqtt.Client(client_id=cfg.client_id, protocol=mqtt.MQTTv5)
     if cfg.mqtt_user:
@@ -249,7 +276,11 @@ def main() -> None:
     # TLS
     tls_ctx = build_tls_context(cfg)
     mq.tls_set_context(tls_ctx)
-    mq.tls_insecure_set(cfg.mqtt_insecure)  # paho internal switch too
+
+    # IMPORTANT:
+    # In paho, tls_insecure_set(True) disabilita l'host name verification nel layer TLS.
+    # Deve essere coerente con cfg.mqtt_insecure.
+    mq.tls_insecure_set(cfg.mqtt_insecure)
 
     # Reconnect policy
     mq.reconnect_delay_set(min_delay=1, max_delay=30)
@@ -281,12 +312,16 @@ def main() -> None:
     # Connect loop
     while True:
         try:
-            # servername (SNI) se vuoi (utile se un domani fai verify senza insecure)
-            # paho non espone direttamente SNI, ma SSLContext lo usa con hostname del socket.
-            # Quindi: se vuoi SNI/verify corretto senza insecure, imposta MQTT_HOST=mosquitto
-            # oppure usa un DNS che matcha il certificato.
             mq.connect(cfg.mqtt_host, cfg.mqtt_port, keepalive=30)
             break
+        except ssl.SSLError as e:
+            log.error(
+                "MQTT TLS failed: %s. "
+                "Se stai usando un IP come MQTT_HOST, metti MQTT_TLS_INSECURE=true "
+                "oppure usa un hostname che matcha il certificato.",
+                e
+            )
+            time.sleep(2)
         except Exception as e:
             log.warning("MQTT connect failed: %s (retry in 2s)", e)
             time.sleep(2)
@@ -308,8 +343,9 @@ def main() -> None:
             enqueue(topic, payload)
 
     while True:
-        # status
         now = time.time()
+
+        # status
         if now - last_status >= 5:
             status_payload = {
                 "ts": int(now),
@@ -370,6 +406,7 @@ def main() -> None:
                 log.info("drained %d buffered msg(s)", n)
 
         time.sleep(cfg.publish_interval_s)
+
 
 if __name__ == "__main__":
     main()
