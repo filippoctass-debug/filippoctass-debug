@@ -46,4 +46,4 @@
       - DOCKER_API_VERSION=1.44
       - REPO_USER=${GHCR_USER}
       - REPO_PASS=${GHCR_TOKEN}
-    command: --interval 60 --cleanup --label-enable --registry-auth
+    command: --interval 60 --cleanup --label-enable --debug
