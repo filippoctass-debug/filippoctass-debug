@@ -1,4 +1,7 @@
-﻿import json, os, threading, time
+﻿import json
+import os
+import threading
+import time
 from typing import Optional
 
 import paho.mqtt.client as mqtt
@@ -9,18 +12,76 @@ from app.influx import get_influx_client
 
 _thread: Optional[threading.Thread] = None
 
+
+def _log(msg: str):
+    # log semplice, visibile con `docker compose logs control-room-api`
+    print(f"[mqtt_ingest] {msg}", flush=True)
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     v = os.getenv(name)
     if v is None:
         return default
     return v.strip().lower() in ("1", "true", "yes", "y", "on")
 
-def _log(msg: str):
-    # log semplice su stdout (docker logs)
-    print(f"[mqtt_ingest] {msg}", flush=True)
 
-def write_edge_status(influx, site_id: str, payload: dict):
-    p = Point("edge_status").tag("site_id", site_id)
+def _safe_json(payload) -> str:
+    try:
+        return json.dumps(payload)[:1000]
+    except Exception:
+        return "<unserializable>"
+
+
+def _on_connect(client, userdata, flags, reason_code, properties=None):
+    base = os.getenv("MQTT_TOPIC_BASE", "pv")
+
+    telemetry = os.getenv("MQTT_SUB_TOPIC", f"{base}/+/telemetry")
+    status = f"{base}/+/status"
+    modbus_status = f"{base}/+/modbus_status"
+    modbus_error = f"{base}/+/modbus_error"
+
+    _log(f"CONNECTED rc={reason_code}. subscribing to: {telemetry}, {status}, {modbus_status}, {modbus_error}")
+
+    client.subscribe(telemetry, qos=1)
+    client.subscribe(status, qos=1)
+    client.subscribe(modbus_status, qos=1)
+    client.subscribe(modbus_error, qos=1)
+
+
+def _write_telemetry(influx, site_id: str, payload: dict):
+    meas = payload.get("measurement", "pv_telemetry")
+    fields = payload.get("fields", {})
+    tags = payload.get("tags", {})
+
+    if not isinstance(fields, dict) or not fields:
+        return
+
+    p = Point(meas).tag("site_id", str(site_id))
+
+    if isinstance(tags, dict):
+        for k, v in tags.items():
+            if v is not None:
+                p = p.tag(str(k), str(v))
+
+    for k, v in fields.items():
+        if v is None:
+            continue
+        p = p.field(str(k), v)
+
+    ts = payload.get("ts")
+    if isinstance(ts, int):
+        p = p.time(ts, WritePrecision.S)
+
+    influx.write_api().write(
+        bucket=os.getenv("INFLUX_BUCKET", ""),
+        org=os.getenv("INFLUX_ORG", ""),
+        record=p,
+        write_precision=WritePrecision.S,
+    )
+
+
+def _write_edge_status(influx, site_id: str, payload: dict):
+    p = Point("edge_status").tag("site_id", str(site_id))
 
     if "mqtt_connected" in payload:
         p = p.field("mqtt_connected", bool(payload.get("mqtt_connected")))
@@ -35,7 +96,7 @@ def write_edge_status(influx, site_id: str, payload: dict):
 
     ts = payload.get("ts")
     if isinstance(ts, int):
-        p = p.time(ts * 1_000_000_000, WritePrecision.NS)
+        p = p.time(ts, WritePrecision.S)
 
     influx.write_api().write(
         bucket=os.getenv("INFLUX_BUCKET", ""),
@@ -44,8 +105,9 @@ def write_edge_status(influx, site_id: str, payload: dict):
         write_precision=WritePrecision.S,
     )
 
-def write_modbus_event(influx, measurement: str, site_id: str, payload: dict):
-    p = Point(measurement).tag("site_id", site_id)
+
+def _write_modbus_event(influx, measurement: str, site_id: str, payload: dict):
+    p = Point(measurement).tag("site_id", str(site_id))
 
     for k in ("device", "host", "port", "unit_id"):
         if k in payload and payload[k] is not None:
@@ -64,7 +126,7 @@ def write_modbus_event(influx, measurement: str, site_id: str, payload: dict):
 
     ts = payload.get("ts")
     if isinstance(ts, int):
-        p = p.time(ts * 1_000_000_000, WritePrecision.NS)
+        p = p.time(ts, WritePrecision.S)
 
     influx.write_api().write(
         bucket=os.getenv("INFLUX_BUCKET", ""),
@@ -73,18 +135,6 @@ def write_modbus_event(influx, measurement: str, site_id: str, payload: dict):
         write_precision=WritePrecision.S,
     )
 
-def _on_connect(client, userdata, flags, reason_code, properties=None):
-    base = os.getenv("MQTT_TOPIC_BASE", "pv")
-    _log(f"CONNECTED reason_code={reason_code} host={os.getenv('MQTT_HOST')} port={os.getenv('MQTT_PORT')} insecure={os.getenv('MQTT_TLS_INSECURE')}")
-    topics = [
-        os.getenv("MQTT_SUB_TOPIC", f"{base}/+/telemetry"),
-        f"{base}/+/status",
-        f"{base}/+/modbus_status",
-        f"{base}/+/modbus_error",
-    ]
-    for t in topics:
-        _log(f"SUBSCRIBE {t}")
-        client.subscribe(t, qos=1)
 
 def _on_message(client, userdata, msg):
     topic = msg.topic or ""
@@ -93,66 +143,51 @@ def _on_message(client, userdata, msg):
     except Exception as e:
         _log(f"DROP non-json topic={topic} err={e}")
         return
+
     if not isinstance(payload, dict):
-        _log(f"DROP non-dict topic={topic}")
+        _log(f"DROP non-dict topic={topic} payload={type(payload)}")
         return
 
     site_id = payload.get("site_id")
     if not site_id:
-        _log(f"DROP no site_id topic={topic} keys={list(payload.keys())}")
+        _log(f"DROP missing site_id topic={topic} payload={_safe_json(payload)}")
         return
 
     influx = userdata["influx"]
 
     try:
-        # 1) edge status
         if topic.endswith("/status"):
-            write_edge_status(influx, site_id, payload)
+            _write_edge_status(influx, site_id, payload)
             _log(f"WROTE edge_status site_id={site_id}")
             return
 
-        # 2) modbus status/error
         if topic.endswith("/modbus_status"):
-            write_modbus_event(influx, "modbus_status", site_id, payload)
+            _write_modbus_event(influx, "modbus_status", site_id, payload)
             _log(f"WROTE modbus_status site_id={site_id}")
             return
 
         if topic.endswith("/modbus_error"):
-            write_modbus_event(influx, "modbus_error", site_id, payload)
+            _write_modbus_event(influx, "modbus_error", site_id, payload)
             _log(f"WROTE modbus_error site_id={site_id}")
             return
 
-        # 3) telemetry
-        meas = payload.get("measurement", "pv_telemetry")
-        fields = payload.get("fields", {})
-        tags = payload.get("tags", {})
-        if not isinstance(fields, dict):
-            _log(f"DROP bad fields topic={topic} site_id={site_id}")
-            return
-
-        p = Point(meas).tag("site_id", site_id)
-        for k, v in (tags or {}).items():
-            if v is not None:
-                p = p.tag(str(k), str(v))
-        for k, v in fields.items():
-            if v is None:
-                continue
-            p = p.field(str(k), v)
-
-        userdata["write_api"].write(
-            bucket=os.getenv("INFLUX_BUCKET", ""),
-            org=os.getenv("INFLUX_ORG", ""),
-            record=p,
-            write_precision=WritePrecision.S,
-        )
-        _log(f"WROTE telemetry meas={meas} site_id={site_id} fields={list(fields.keys())}")
-
+        # default telemetry
+        _write_telemetry(influx, site_id, payload)
+        _log(f"WROTE telemetry site_id={site_id} meas={payload.get('measurement','pv_telemetry')}")
     except Exception as e:
         _log(f"ERROR write topic={topic} site_id={site_id} err={e}")
 
+
 def _run():
+    _log("START mqtt_ingest thread")
+
     influx = get_influx_client()
-    write_api = influx.write_api(write_options=SYNCHRONOUS)
+    # smoke check: ping influx
+    try:
+        ok = influx.ping()
+        _log(f"INFLUX ping={ok} url={os.getenv('INFLUX_URL','')}")
+    except Exception as e:
+        _log(f"INFLUX ping ERROR: {e}")
 
     host = os.getenv("MQTT_HOST", "mosquitto")
     port = int(os.getenv("MQTT_PORT", "8883"))
@@ -161,23 +196,27 @@ def _run():
     ca = os.getenv("MQTT_TLS_CA", "/mosquitto/certs/ca.crt")
     insecure = _env_bool("MQTT_TLS_INSECURE", False)
 
-    _log(f"START host={host} port={port} user={user} ca={ca} insecure={insecure} bucket={os.getenv('INFLUX_BUCKET')} org={os.getenv('INFLUX_ORG')} url={os.getenv('INFLUX_URL')}")
+    _log(f"MQTT cfg host={host} port={port} user={user} ca={ca} insecure={insecure}")
 
     client = mqtt.Client(protocol=mqtt.MQTTv5)
     client.username_pw_set(user, pw)
     client.tls_set(ca_certs=ca)
     client.tls_insecure_set(insecure)
+
     client.on_connect = _on_connect
     client.on_message = _on_message
-    client.user_data_set({"write_api": write_api, "influx": influx})
+    client.user_data_set({"influx": influx})
 
     while True:
         try:
+            _log("MQTT connecting...")
             client.connect(host, port, keepalive=30)
+            _log("MQTT loop_forever()")
             client.loop_forever(retry_first_connection=True)
         except Exception as e:
-            _log(f"CONNECT ERROR err={e} (retry in 2s)")
+            _log(f"MQTT loop ERROR: {e}. retry in 2s")
             time.sleep(2)
+
 
 def start_ingest():
     global _thread
