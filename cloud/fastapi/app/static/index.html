@@ -2,10 +2,9 @@
 <html lang="it">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Control Room â€“ PV Fleet</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Control Room – PV Fleet</title>
 
-  <!-- ECharts -->
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 
   <style>
@@ -23,8 +22,11 @@
       --r:18px;
       --gap:14px;
       --ease:cubic-bezier(.2,.8,.2,1);
+      --border: 1px solid rgba(255,255,255,.07);
     }
+
     *{box-sizing:border-box}
+    html,body{height:100%}
     body{
       margin:0;
       font-family: ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;
@@ -33,9 +35,11 @@
       overflow:hidden;
     }
 
+    a{color:inherit}
+
     .app{
       display:grid;
-      grid-template-columns: 320px 1fr;
+      grid-template-columns: 330px 1fr;
       height:100vh;
       gap:var(--gap);
       padding:var(--gap);
@@ -44,7 +48,7 @@
     /* Sidebar */
     .sidebar{
       background: linear-gradient(180deg, rgba(15,26,46,.95), rgba(12,20,36,.90));
-      border:1px solid rgba(255,255,255,.06);
+      border:var(--border);
       border-radius: var(--r);
       box-shadow: var(--shadow);
       padding:16px;
@@ -58,7 +62,7 @@
       display:flex;
       align-items:center;
       gap:12px;
-      margin-bottom:14px;
+      margin-bottom:12px;
     }
     .logo{
       width:44px;height:44px;border-radius:14px;
@@ -66,6 +70,7 @@
       box-shadow: 0 18px 40px rgba(85,140,255,.25);
       position:relative;
       overflow:hidden;
+      flex:0 0 auto;
     }
     .logo:after{
       content:"";
@@ -79,35 +84,50 @@
       45%{transform: translateX(40%) rotate(20deg)}
       100%{transform: translateX(40%) rotate(20deg)}
     }
-    .brand h1{
-      font-size:16px;margin:0;letter-spacing:.4px;
+    .brand h1{font-size:16px;margin:0;letter-spacing:.4px;}
+    .brand .sub{font-size:12px;color:var(--muted);margin-top:2px;}
+
+    .row{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:10px;
     }
-    .brand .sub{
-      font-size:12px;color:var(--muted);margin-top:2px;
+
+    .pillBtn{
+      border:var(--border);
+      background: rgba(255,255,255,.05);
+      color:var(--text);
+      border-radius: 999px;
+      padding:8px 10px;
+      font-size:12px;
+      cursor:pointer;
+      transition: transform .2s var(--ease), background .2s var(--ease), border-color .2s var(--ease);
+      user-select:none;
+      white-space:nowrap;
     }
+    .pillBtn:hover{ transform: translateY(-1px); background: rgba(255,255,255,.07); border-color: rgba(120,170,255,.35); }
 
     .search{
       margin:10px 0 12px;
       padding:10px 12px;
       border-radius:14px;
-      border:1px solid rgba(255,255,255,.07);
+      border:var(--border);
       background: rgba(255,255,255,.04);
       color:var(--text);
       outline:none;
     }
 
-    .siteList{overflow:auto; padding-right:6px;}
+    .siteList{overflow:auto; padding-right:6px; flex:1;}
     .site{
       display:flex; align-items:center; justify-content:space-between;
       padding:12px 12px;
       border-radius:16px;
-      border:1px solid rgba(255,255,255,.06);
+      border:var(--border);
       background: rgba(255,255,255,.03);
       cursor:pointer;
       margin-bottom:10px;
       transition: transform .25s var(--ease), background .25s var(--ease), border-color .25s var(--ease);
     }
-    .site:hover{ transform: translateY(-2px); background: rgba(255,255,255,.05); border-color: rgba(120,170,255,.35);}
+    .site:hover{ transform: translateY(-2px); background: rgba(255,255,255,.05); border-color: rgba(120,170,255,.35); }
     .site.active{ background: rgba(106,169,255,.12); border-color: rgba(106,169,255,.55); }
     .site .left{display:flex;align-items:center;gap:10px;}
     .dot{
@@ -116,17 +136,29 @@
     }
     .dot.ok{background:var(--ok); box-shadow: 0 0 0 6px rgba(37,209,138,.12);}
     .dot.bad{background:var(--bad); box-shadow: 0 0 0 6px rgba(255,77,109,.12);}
-    .site .name{font-weight:700; font-size:13px;}
+    .site .name{font-weight:800; font-size:13px;}
     .site .meta{font-size:11px;color:var(--muted); margin-top:2px;}
     .badge{
       font-size:11px;
       padding:6px 10px;
       border-radius:999px;
       background: rgba(255,255,255,.06);
-      border:1px solid rgba(255,255,255,.08);
+      border:var(--border);
       color:var(--muted);
       white-space:nowrap;
     }
+
+    .footer{
+      margin-top:12px;
+      padding-top:12px;
+      border-top:1px solid rgba(255,255,255,.06);
+      color:var(--muted);
+      font-size:12px;
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+    }
+    .mono{font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 
     /* Main */
     .main{
@@ -138,13 +170,13 @@
 
     .topbar{
       display:flex;
-      align-items:center;
+      align-items:stretch;
       justify-content:space-between;
       gap:12px;
     }
     .title{
       background: rgba(255,255,255,.03);
-      border:1px solid rgba(255,255,255,.06);
+      border:var(--border);
       border-radius: var(--r);
       box-shadow: var(--shadow);
       padding:16px 18px;
@@ -174,7 +206,7 @@
     }
     .card{
       background: linear-gradient(180deg, rgba(16,31,55,.95), rgba(12,20,36,.90));
-      border:1px solid rgba(255,255,255,.06);
+      border:var(--border);
       border-radius: var(--r);
       box-shadow: var(--shadow);
       padding:16px;
@@ -185,15 +217,15 @@
     }
     .card:hover{transform: translateY(-2px);}
     .card .label{font-size:12px;color:var(--muted);}
-    .card .value{font-size:26px;font-weight:800;margin-top:10px;letter-spacing:.2px;}
+    .card .value{font-size:26px;font-weight:900;margin-top:10px;letter-spacing:.2px;}
     .card .hint{font-size:11px;color:var(--muted);margin-top:8px;}
     .spark{
       position:absolute; inset:auto -50px -70px auto;
       width:200px;height:200px;border-radius:50%;
       background: radial-gradient(circle at 30% 30%, rgba(37,209,138,.28), rgba(37,209,138,0));
-      filter: blur(0px);
       opacity:.9;
       animation: float 5.4s var(--ease) infinite;
+      pointer-events:none;
     }
     @keyframes float{
       0%,100%{transform: translate(0,0)}
@@ -207,21 +239,37 @@
       flex:1;
       overflow:hidden;
     }
-    .chart{
+    .panel{
       background: linear-gradient(180deg, rgba(16,31,55,.95), rgba(12,20,36,.90));
-      border:1px solid rgba(255,255,255,.06);
+      border:var(--border);
       border-radius: var(--r);
       box-shadow: var(--shadow);
       padding:14px;
       overflow:hidden;
       position:relative;
+      min-height: 360px;
     }
-    .chartHeader{
+    .panelHeader{
       display:flex;justify-content:space-between;align-items:center;
       padding:4px 6px 10px;
+      gap:10px;
     }
-    .chartHeader .h{font-weight:800;}
-    .chartHeader .s{font-size:12px;color:var(--muted);}
+    .panelHeader .h{font-weight:900;}
+    .panelHeader .s{font-size:12px;color:var(--muted); margin-top:2px;}
+    .panelHeader .right{display:flex; gap:8px; align-items:center;}
+    .chip{
+      display:inline-flex;
+      gap:8px;
+      align-items:center;
+      font-size:11px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:var(--border);
+      background: rgba(255,255,255,.05);
+      color:var(--muted);
+      white-space:nowrap;
+    }
+
     .chartBox{height:100%; min-height:360px;}
     .list{
       display:flex; flex-direction:column; gap:10px; overflow:auto;
@@ -232,53 +280,161 @@
       padding:12px 12px;
       border-radius:16px;
       background: rgba(255,255,255,.03);
-      border:1px solid rgba(255,255,255,.06);
+      border:var(--border);
       animation: pop .35s var(--ease);
     }
     @keyframes pop{
       from{transform: translateY(6px); opacity:0}
       to{transform: translateY(0); opacity:1}
     }
-    .evt .t{font-weight:800;}
-    .evt .d{font-size:12px;color:var(--muted);margin-top:6px;}
-    .pill{
+    .evt .t{font-weight:900;}
+    .evt .d{font-size:12px;color:var(--muted);margin-top:6px; line-height:1.35;}
+    .evt .k{
       display:inline-block;
       font-size:11px;
       margin-top:10px;
       padding:6px 10px;
       border-radius:999px;
-      border:1px solid rgba(255,255,255,.08);
+      border:var(--border);
       background: rgba(255,255,255,.05);
       color:var(--muted);
     }
 
+    /* Drawer */
+    .drawerOverlay{
+      position:fixed; inset:0;
+      background: rgba(0,0,0,.55);
+      display:none;
+      align-items:stretch;
+      justify-content:flex-end;
+      z-index:999;
+    }
+    .drawerOverlay.show{display:flex;}
+    .drawer{
+      width:min(560px, 92vw);
+      height:100%;
+      background: linear-gradient(180deg, rgba(15,26,46,.98), rgba(10,16,28,.98));
+      border-left: 1px solid rgba(255,255,255,.08);
+      padding:16px;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      overflow:auto;
+    }
+    .drawerTitle{
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding:8px 6px;
+    }
+    .drawerTitle h3{margin:0; font-size:16px;}
+    .btn{
+      border:var(--border);
+      background: rgba(255,255,255,.05);
+      color:var(--text);
+      border-radius: 12px;
+      padding:10px 12px;
+      font-size:12px;
+      cursor:pointer;
+      transition: transform .2s var(--ease), background .2s var(--ease), border-color .2s var(--ease);
+      user-select:none;
+      white-space:nowrap;
+    }
+    .btn:hover{ transform: translateY(-1px); background: rgba(255,255,255,.07); border-color: rgba(120,170,255,.35); }
+    .btn.danger{ background: rgba(255,77,109,.15); border-color: rgba(255,77,109,.25); }
+    .btn.primary{ background: rgba(106,169,255,.14); border-color: rgba(106,169,255,.30); }
+
+    .field{
+      display:flex; flex-direction:column; gap:6px;
+      background: rgba(255,255,255,.03);
+      border:var(--border);
+      border-radius: 14px;
+      padding:12px;
+    }
+    .field label{font-size:12px;color:var(--muted);}
+    .input{
+      border:var(--border);
+      background: rgba(255,255,255,.04);
+      color:var(--text);
+      border-radius: 12px;
+      padding:10px 10px;
+      outline:none;
+      font-size:13px;
+    }
+
+    table{
+      width:100%;
+      border-collapse:separate;
+      border-spacing:0;
+      overflow:hidden;
+      border-radius: 14px;
+      border:var(--border);
+      background: rgba(255,255,255,.02);
+    }
+    th,td{
+      padding:10px 10px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      font-size:12px;
+      vertical-align:middle;
+    }
+    th{color:var(--muted); text-align:left; font-weight:800; background: rgba(255,255,255,.03);}
+    tr:last-child td{border-bottom:none}
+    td input{
+      width:100%;
+      border:var(--border);
+      background: rgba(255,255,255,.04);
+      color:var(--text);
+      border-radius: 10px;
+      padding:8px 8px;
+      font-size:12px;
+      outline:none;
+    }
+
+    .msg{
+      font-size:12px;
+      color:var(--muted);
+      padding:10px 12px;
+      border-radius: 14px;
+      border:var(--border);
+      background: rgba(255,255,255,.03);
+      line-height:1.35;
+    }
+    .msg.err{ color:#ffd0d8; background: rgba(255,77,109,.10); border-color: rgba(255,77,109,.20); }
+    .msg.ok{ color:#c8ffe8; background: rgba(37,209,138,.08); border-color: rgba(37,209,138,.18); }
+
     /* Responsive */
     @media (max-width: 1200px){
+      body{overflow:auto;}
+      .app{height:auto; overflow:auto; grid-template-columns: 1fr; }
       .kpis{grid-template-columns: repeat(2, 1fr);}
       .grid{grid-template-columns: 1fr;}
-      body{overflow:auto;}
-      .app{height:auto; overflow:auto;}
+      .sidebar{min-height: 520px;}
     }
   </style>
 </head>
+
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">
-      <div class="logo"></div>
+    <div class="row">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <h1>Control Room</h1>
+          <div class="sub">Fleet PV – live status & KPI</div>
+        </div>
+      </div>
       <div>
-        <h1>Control Room</h1>
-        <div class="sub">Fleet PV â€“ live status & KPI</div>
+        <button id="btnSettings" class="pillBtn" title="Config / Tools">⚙️ Config</button>
       </div>
     </div>
 
-    <input id="q" class="search" placeholder="Cerca impianto (PV_001â€¦)" />
+    <input id="q" class="search" placeholder="Cerca impianto (PV_001…)" />
 
     <div id="siteList" class="siteList"></div>
 
-    <div style="margin-top:auto; padding-top:10px; color:var(--muted); font-size:12px;">
-      <div>Cloud: <b>100.73.160.84</b></div>
-      <div id="conn">WS: connectingâ€¦</div>
+    <div class="footer">
+      <div>Host: <b class="mono" id="hostLabel">—</b></div>
+      <div id="conn">WS: connecting…</div>
+      <div id="apiStatus" class="mono">API: …</div>
     </div>
   </aside>
 
@@ -287,34 +443,60 @@
       <div class="title">
         <div class="pulse"></div>
         <h2 id="title">Seleziona un impianto</h2>
-        <p id="subtitle">Appena lâ€™edge pubblica, comparirÃ  qui automaticamente.</p>
+        <p id="subtitle">Appena l’edge pubblica telemetria, comparirà automaticamente.</p>
       </div>
     </div>
 
     <section class="kpis">
-      <div class="card"><div class="spark"></div><div class="label">Stato</div><div class="value" id="k_status">â€”</div><div class="hint" id="k_age">â€”</div></div>
-      <div class="card"><div class="label">Potenza AC</div><div class="value" id="k_pac">â€”</div><div class="hint">W (media ultimi punti)</div></div>
-      <div class="card"><div class="label">Irraggiamento POA</div><div class="value" id="k_poa">â€”</div><div class="hint">W/mÂ²</div></div>
-      <div class="card"><div class="label">Health</div><div class="value" id="k_health">â€”</div><div class="hint">Telemetry freshness</div></div>
+      <div class="card">
+        <div class="spark"></div>
+        <div class="label">Stato</div>
+        <div class="value" id="k_status">—</div>
+        <div class="hint" id="k_age">—</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Potenza AC</div>
+        <div class="value" id="k_pac">—</div>
+        <div class="hint">W (media ultimi punti)</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Irraggiamento POA</div>
+        <div class="value" id="k_poa">—</div>
+        <div class="hint">W/m²</div>
+      </div>
+
+      <div class="card">
+        <div class="label">Health</div>
+        <div class="value" id="k_health">—</div>
+        <div class="hint">Freshness telemetria</div>
+      </div>
     </section>
 
     <section class="grid">
-      <div class="chart">
-        <div class="chartHeader">
+      <div class="panel">
+        <div class="panelHeader">
           <div>
             <div class="h">Irraggiamento vs Potenza</div>
-            <div class="s">Aggiornamento live (serie ultimi minuti)</div>
+            <div class="s">Aggiornamento live (ultimi minuti)</div>
           </div>
-          <div class="pill" id="rangePill">range: 120m</div>
+          <div class="right">
+            <div class="chip" id="rangePill">range: 120m</div>
+            <button class="pillBtn" id="btnRefresh">↻ Refresh</button>
+          </div>
         </div>
         <div id="chart1" class="chartBox"></div>
       </div>
 
-      <div class="chart">
-        <div class="chartHeader">
+      <div class="panel">
+        <div class="panelHeader">
           <div>
             <div class="h">Eventi</div>
-            <div class="s">Alert & info (placeholder)</div>
+            <div class="s">Stato connessione & attività</div>
+          </div>
+          <div class="right">
+            <button class="pillBtn" id="btnClearEvents">Clear</button>
           </div>
         </div>
         <div id="events" class="list"></div>
@@ -323,53 +505,125 @@
   </main>
 </div>
 
+<!-- Drawer -->
+<div id="drawerOverlay" class="drawerOverlay" aria-hidden="true">
+  <div class="drawer" role="dialog" aria-modal="true">
+    <div class="drawerTitle">
+      <h3>Config & Tools</h3>
+      <button class="btn" id="btnCloseDrawer">Chiudi ✕</button>
+    </div>
+
+    <div class="msg" id="cfgMsg">
+      Qui mettiamo le funzioni operative (Modbus devices, edge config, ecc). Se un endpoint non esiste ancora,
+      lo segnalo senza rompere la dashboard.
+    </div>
+
+    <div class="field">
+      <label>Site ID (per config)</label>
+      <input id="cfgSiteId" class="input" placeholder="PV_001" value="PV_001" />
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn primary" id="btnLoadAll">Load (best effort)</button>
+        <button class="btn" id="btnSaveAll">Save (best effort)</button>
+      </div>
+    </div>
+
+    <!-- Modbus Devices -->
+    <div class="field">
+      <label style="font-weight:800">Modbus Devices (Cloud)</label>
+      <div class="msg" id="mbMsg">Non caricato.</div>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn" id="mbAdd">+ Add device</button>
+      </div>
+
+      <div style="overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:90px">Enabled</th>
+              <th style="width:160px">Name</th>
+              <th>Host</th>
+              <th style="width:100px">Port</th>
+              <th style="width:100px">Unit</th>
+              <th style="width:220px">ID</th>
+              <th style="width:110px">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="mbTbody"></tbody>
+        </table>
+      </div>
+
+      <div class="msg">
+        <div style="font-weight:900; margin-bottom:6px;">Preview per Edge (.env)</div>
+        <div class="mono">MODBUS_TARGETS=<span id="mbTargets"></span></div>
+      </div>
+    </div>
+
+    <!-- Edge Driver Config (placeholder) -->
+    <div class="field">
+      <label style="font-weight:800">Edge config (placeholder)</label>
+      <div class="msg" id="edgeMsg">
+        Endpoint attesi: <span class="mono">GET/PUT /api/edge/{siteId}</span>.
+        Se non esistono ancora, qui vedrai 404 e stop (senza crash).
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn" id="edgeLoad">Load edge cfg</button>
+        <button class="btn primary" id="edgeSave">Save edge cfg</button>
+      </div>
+      <div class="msg mono" id="edgeJson" style="white-space:pre-wrap; min-height:80px;">(vuoto)</div>
+    </div>
+
+    <div style="margin-top:auto; display:flex; gap:10px; justify-content:flex-end;">
+      <button class="btn danger" id="btnCloseDrawer2">Chiudi</button>
+    </div>
+  </div>
+</div>
+
 <script>
   const $ = (id) => document.getElementById(id);
 
+  // ---------- State ----------
   let selected = null;
-  let sitesStatus = [];
-  let allSites = [];
+  let sitesStatus = [];   // from WS
+  let allSites = [];      // from /sites
   let ws = null;
 
-  const chart = echarts.init($("chart1"));
-  const baseOption = {
-    grid: { left: 46, right: 16, top: 26, bottom: 34 },
-    tooltip: { trigger: 'axis' },
-    xAxis: { type:'category', boundaryGap:false, axisLabel:{ color:'#9fb0d0'} },
-    yAxis: [
-      { type:'value', name:'W', axisLabel:{ color:'#9fb0d0'} },
-      { type:'value', name:'W/mÂ²', axisLabel:{ color:'#9fb0d0'} }
-    ],
-    series: [
-      { name:'Potenza AC (W)', type:'line', smooth:true, showSymbol:false, data:[] },
-      { name:'POA (W/mÂ²)', type:'line', smooth:true, showSymbol:false, yAxisIndex:1, data:[] }
-    ]
-  };
-  chart.setOption(baseOption);
-
+  // ---------- UI helpers ----------
   function fmt(v, unit="") {
-    if (v === null || v === undefined) return "â€”";
-    if (typeof v !== "number") return v;
-    if (Math.abs(v) >= 1000 && unit==="W") return (v/1000).toFixed(2) + " kW";
-    return v.toFixed(0) + (unit?(" "+unit):"");
+    if (v === null || v === undefined) return "—";
+    if (typeof v !== "number") return String(v);
+    if (Math.abs(v) >= 1000 && unit === "W") return (v/1000).toFixed(2) + " kW";
+    if (unit === "W/m²") return v.toFixed(0) + " " + unit;
+    return v.toFixed(0) + (unit ? (" " + unit) : "");
   }
 
-  function setSelected(siteId){
-    selected = siteId;
-    $("title").innerText = `Impianto ${siteId}`;
-    renderSites();
-    refreshSelectedKpi();
-    fetchSeries();
+  function pushEvent(title, desc, kind="info"){
+    const el = $("events");
+    const node = document.createElement("div");
+    node.className = "evt";
+    const stamp = new Date().toLocaleTimeString();
+    const k = (kind === "warn") ? "warn" : (kind === "err" ? "err" : "info");
+    node.innerHTML = `
+      <div class="t">${title} <span style="color:var(--muted);font-weight:600;font-size:12px;">(${stamp})</span></div>
+      <div class="d">${desc}</div>
+      <div class="k">${k}</div>
+    `;
+    el.prepend(node);
+    while(el.children.length > 10) el.removeChild(el.lastChild);
   }
 
   function renderSites(){
     const q = $("q").value.trim().toLowerCase();
     const el = $("siteList");
     el.innerHTML = "";
+
     const list = allSites.filter(s => s.toLowerCase().includes(q));
 
     if(list.length === 0){
-      el.innerHTML = `<div style="color:#9fb0d0;font-size:12px;padding:10px;">Nessun impianto ancoraâ€¦</div>`;
+      el.innerHTML = `<div style="color:#9fb0d0;font-size:12px;padding:10px;line-height:1.35;">
+        Nessun impianto ancora.<br>
+        Se l’edge è online ma non compare, significa che non sta scrivendo punti su Influx (o tag/measurement non compatibili).
+      </div>`;
       return;
     }
 
@@ -397,30 +651,18 @@
     }
   }
 
-  function pushEvent(title, desc, kind="info"){
-    const el = $("events");
-    const node = document.createElement("div");
-    node.className = "evt";
-    const stamp = new Date().toLocaleTimeString();
-    node.innerHTML = `
-      <div class="t">${title} <span style="color:#9fb0d0;font-weight:600;font-size:12px;">(${stamp})</span></div>
-      <div class="d">${desc}</div>
-      <div class="pill">${kind}</div>
-    `;
-    el.prepend(node);
-    // keep small list
-    while(el.children.length > 8) el.removeChild(el.lastChild);
-  }
-
   function refreshSelectedKpi(){
     if(!selected){
-      $("k_status").innerText="â€”";
-      $("k_age").innerText="â€”";
-      $("k_pac").innerText="â€”";
-      $("k_poa").innerText="â€”";
-      $("k_health").innerText="â€”";
+      $("k_status").innerText="—";
+      $("k_age").innerText="—";
+      $("k_pac").innerText="—";
+      $("k_poa").innerText="—";
+      $("k_health").innerText="—";
+      $("k_status").style.color = "var(--text)";
+      $("k_health").style.color = "var(--muted)";
       return;
     }
+
     const st = sitesStatus.find(x => x.site_id === selected);
     const ok = st ? !!st.ok : false;
     const age = st ? st.age_s : null;
@@ -431,20 +673,37 @@
 
     const pac = st?.fields?.p_ac_w;
     const poa = st?.fields?.poa_wm2;
+
     $("k_pac").innerText = fmt(pac ?? null, "W");
-    $("k_poa").innerText = fmt(poa ?? null, "W/mÂ²");
-    $("k_health").innerText = st ? (ok ? "OK" : "STALE") : "â€”";
+    $("k_poa").innerText = fmt(poa ?? null, "W/m²");
+
+    $("k_health").innerText = st ? (ok ? "OK" : "STALE") : "—";
     $("k_health").style.color = st ? (ok ? "var(--ok)" : "var(--warn)") : "var(--muted)";
   }
 
+  function setSelected(siteId){
+    selected = siteId;
+    $("title").innerText = `Impianto ${siteId}`;
+    $("subtitle").innerText = `Telemetria & KPI live per ${siteId}.`;
+    renderSites();
+    refreshSelectedKpi();
+    fetchSeries();
+  }
+
+  // ---------- API ----------
   async function fetchSites(){
     try{
-      const r = await fetch("/sites");
+      const r = await fetch("/sites", { cache: "no-store" });
+      $("apiStatus").innerText = `API: ${r.status}`;
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
       allSites = j.sites || [];
       if(!selected && allSites.length) setSelected(allSites[0]);
       renderSites();
-    }catch(e){}
+    }catch(e){
+      $("apiStatus").innerText = `API: err`;
+      pushEvent("API", `Errore /sites: ${e.message}`, "warn");
+    }
   }
 
   async function fetchSeries(){
@@ -452,8 +711,11 @@
     try{
       const minutes = 120;
       $("rangePill").innerText = `range: ${minutes}m`;
-      const r = await fetch(`/api/site/${selected}/series?minutes=${minutes}&every=10s`);
+
+      const r = await fetch(`/api/site/${encodeURIComponent(selected)}/series?minutes=${minutes}&every=10s`, { cache:"no-store" });
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
+
       const t = (j.t || []).map(x => new Date(x).toLocaleTimeString());
       const pac = j.p_ac_w || [];
       const poa = j.poa_wm2 || [];
@@ -466,155 +728,133 @@
         ]
       }, { notMerge: true });
 
-    }catch(e){}
+    }catch(e){
+      // non spammiamo sempre: solo se l’utente ha scelto un sito
+      pushEvent("Serie", `Impossibile caricare serie per ${selected}: ${e.message}`, "warn");
+    }
   }
 
+  // ---------- WS ----------
   function connectWS(){
     const proto = location.protocol === "https:" ? "wss" : "ws";
     ws = new WebSocket(`${proto}://${location.host}/ws/status`);
 
     ws.onopen = () => {
       $("conn").innerText = "WS: connected";
-      pushEvent("Connessione", "WebSocket live status connesso.", "info");
+      pushEvent("Connessione", "WebSocket status connesso.", "info");
     };
+
     ws.onclose = () => {
-      $("conn").innerText = "WS: reconnectingâ€¦";
-      pushEvent("Connessione", "WebSocket disconnesso. Riconnessioneâ€¦", "warn");
+      $("conn").innerText = "WS: reconnecting…";
+      pushEvent("Connessione", "WebSocket disconnesso. Riconnessione…", "warn");
       setTimeout(connectWS, 1200);
     };
+
     ws.onmessage = (ev) => {
       try{
         const j = JSON.parse(ev.data);
         sitesStatus = j.sites || [];
-        // se arrivano nuovi impianti li refreshiamo via /sites (autodiscovery)
+
+        // autorefresh sites (autodiscovery)
         const before = allSites.length;
         fetchSites();
+
         refreshSelectedKpi();
         if(selected) fetchSeries();
-        if(allSites.length > before) pushEvent("Nuovo impianto", "Rilevato automaticamente da Influx.", "info");
-      }catch(e){}
+
+        if(allSites.length > before){
+          pushEvent("Nuovo impianto", "Rilevato automaticamente (nuove serie in Influx).", "info");
+        }
+      }catch(e){
+        // ignore
+      }
     };
   }
 
-  $("q").addEventListener("input", renderSites);
+  // ---------- Chart ----------
+  const chart = echarts.init($("chart1"));
+  const baseOption = {
+    grid: { left: 46, right: 16, top: 26, bottom: 34 },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type:'category', boundaryGap:false, axisLabel:{ color:'#9fb0d0'} },
+    yAxis: [
+      { type:'value', name:'W', axisLabel:{ color:'#9fb0d0'} },
+      { type:'value', name:'W/m²', axisLabel:{ color:'#9fb0d0'} }
+    ],
+    series: [
+      { name:'Potenza AC (W)', type:'line', smooth:true, showSymbol:false, data:[] },
+      { name:'POA (W/m²)', type:'line', smooth:true, showSymbol:false, yAxisIndex:1, data:[] }
+    ]
+  };
+  chart.setOption(baseOption);
 
-  window.addEventListener("resize", () => chart.resize());
-
-  // boot
-  fetchSites();
-  connectWS();
-</script>
-<!-- ===================== Modbus Devices (Cloud Dashboard) ===================== -->
-<section style="margin-top:24px;padding:16px;border:1px solid #ddd;border-radius:8px;">
-  <h2 style="margin:0 0 10px 0;">Modbus Devices</h2>
-
-  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-    <label>Site ID:
-      <input id="mb_site_id" type="text" placeholder="PV_001" style="padding:6px;min-width:180px;">
-    </label>
-    <button id="mb_load" style="padding:6px 10px;">Load</button>
-    <button id="mb_save" style="padding:6px 10px;">Save</button>
-  </div>
-
-  <div style="margin-top:10px;">
-    <button id="mb_add" style="padding:6px 10px;">+ Add device</button>
-  </div>
-
-  <div style="overflow:auto;margin-top:10px;">
-    <table id="mb_table" border="1" cellpadding="6" style="border-collapse:collapse;min-width:900px;">
-      <thead>
-        <tr>
-          <th>Enabled</th>
-          <th>Name</th>
-          <th>Host</th>
-          <th>Port</th>
-          <th>Unit ID</th>
-          <th>ID</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
-
-  <div style="margin-top:12px;">
-    <div style="font-weight:bold;">Generated for Edge (.env):</div>
-    <div style="font-family:monospace;white-space:pre-wrap;background:#f7f7f7;padding:10px;border-radius:6px;">
-      MODBUS_TARGETS=<span id="mb_env_targets"></span>
-    </div>
-  </div>
-
-  <div id="mb_msg" style="margin-top:10px;color:#444;"></div>
-</section>
-
-<script>
-(function() {
-  const siteInput = document.getElementById('mb_site_id');
-  const btnLoad = document.getElementById('mb_load');
-  const btnSave = document.getElementById('mb_save');
-  const btnAdd  = document.getElementById('mb_add');
-  const tbody = document.querySelector('#mb_table tbody');
-  const envSpan = document.getElementById('mb_env_targets');
-  const msg = document.getElementById('mb_msg');
-
-  function setMsg(t, isErr=false) {
-    msg.textContent = t;
-    msg.style.color = isErr ? '#b00020' : '#444';
+  // ---------- Drawer (Config) ----------
+  function openDrawer(){
+    $("drawerOverlay").classList.add("show");
+    $("drawerOverlay").setAttribute("aria-hidden","false");
+  }
+  function closeDrawer(){
+    $("drawerOverlay").classList.remove("show");
+    $("drawerOverlay").setAttribute("aria-hidden","true");
   }
 
-  function rowTemplate(d) {
-    const tr = document.createElement('tr');
+  $("btnSettings").addEventListener("click", openDrawer);
+  $("btnCloseDrawer").addEventListener("click", closeDrawer);
+  $("btnCloseDrawer2").addEventListener("click", closeDrawer);
+  $("drawerOverlay").addEventListener("click", (e) => { if(e.target === $("drawerOverlay")) closeDrawer(); });
 
-    const tdEnabled = document.createElement('td');
-    const chk = document.createElement('input');
-    chk.type = 'checkbox';
+  // ---------- Modbus table helpers (best effort endpoints) ----------
+  function setBoxMsg(id, text, kind="info"){
+    const el = $(id);
+    el.className = "msg" + (kind==="err" ? " err" : kind==="ok" ? " ok" : "");
+    el.textContent = text;
+  }
+
+  function mbRowTemplate(d){
+    const tr = document.createElement("tr");
+
+    const tdEnabled = document.createElement("td");
+    const chk = document.createElement("input");
+    chk.type = "checkbox";
     chk.checked = !!d.enabled;
     tdEnabled.appendChild(chk);
 
-    const tdName = document.createElement('td');
-    const inName = document.createElement('input');
-    inName.value = d.name || '';
-    inName.style.width = '160px';
+    const tdName = document.createElement("td");
+    const inName = document.createElement("input");
+    inName.value = d.name || "";
     tdName.appendChild(inName);
 
-    const tdHost = document.createElement('td');
-    const inHost = document.createElement('input');
-    inHost.value = d.host || '';
-    inHost.style.width = '160px';
+    const tdHost = document.createElement("td");
+    const inHost = document.createElement("input");
+    inHost.value = d.host || "";
     tdHost.appendChild(inHost);
 
-    const tdPort = document.createElement('td');
-    const inPort = document.createElement('input');
-    inPort.type = 'number';
-    inPort.min = '1';
-    inPort.max = '65535';
+    const tdPort = document.createElement("td");
+    const inPort = document.createElement("input");
+    inPort.type = "number";
     inPort.value = (d.port ?? 502);
-    inPort.style.width = '90px';
     tdPort.appendChild(inPort);
 
-    const tdUnit = document.createElement('td');
-    const inUnit = document.createElement('input');
-    inUnit.type = 'number';
-    inUnit.min = '0';
-    inUnit.max = '255';
+    const tdUnit = document.createElement("td");
+    const inUnit = document.createElement("input");
+    inUnit.type = "number";
     inUnit.value = (d.unit_id ?? 1);
-    inUnit.style.width = '90px';
     tdUnit.appendChild(inUnit);
 
-    const tdId = document.createElement('td');
-    const inId = document.createElement('input');
-    inId.value = d.id || '';
-    inId.placeholder = '(auto)';
-    inId.style.width = '260px';
+    const tdId = document.createElement("td");
+    const inId = document.createElement("input");
+    inId.value = d.id || "";
+    inId.placeholder = "(auto)";
     tdId.appendChild(inId);
 
-    const tdActions = document.createElement('td');
-    const del = document.createElement('button');
-    del.textContent = 'Remove';
-    del.style.padding='4px 8px';
-    del.addEventListener('click', () => {
+    const tdActions = document.createElement("td");
+    const del = document.createElement("button");
+    del.className = "btn danger";
+    del.style.padding = "8px 10px";
+    del.textContent = "Remove";
+    del.addEventListener("click", () => {
       tr.remove();
-      updateEnvPreview();
+      mbUpdateTargets();
     });
     tdActions.appendChild(del);
 
@@ -626,210 +866,173 @@
     tr.appendChild(tdId);
     tr.appendChild(tdActions);
 
-    // store getters
     tr._getDevice = () => ({
       id: inId.value.trim(),
-      name: inName.value.trim() || 'device',
+      name: inName.value.trim() || "device",
       host: inHost.value.trim(),
       port: Number(inPort.value || 502),
       unit_id: Number(inUnit.value || 1),
       enabled: chk.checked
     });
 
-    // update preview on change
-    [chk, inName, inHost, inPort, inUnit, inId].forEach(el => el.addEventListener('input', updateEnvPreview));
-
+    [chk, inName, inHost, inPort, inUnit, inId].forEach(el => el.addEventListener("input", mbUpdateTargets));
     return tr;
   }
 
-  function devicesFromTable() {
-    const rows = Array.from(tbody.querySelectorAll('tr'));
+  function mbDevicesFromTable(){
+    const rows = Array.from($("mbTbody").querySelectorAll("tr"));
     return rows.map(r => r._getDevice()).filter(d => d.host);
   }
 
-  function updateEnvPreview() {
-    const devs = devicesFromTable().filter(d => d.enabled);
-    const parts = devs.map(d => ${d.host}::);
-    envSpan.textContent = parts.join(',');
+  function mbUpdateTargets(){
+    const devs = mbDevicesFromTable().filter(d => d.enabled);
+    const parts = devs.map(d => `${d.host}:${d.port}:${d.unit_id}`);
+    $("mbTargets").textContent = parts.join(",");
   }
 
-  async function loadSite() {
-    const siteId = siteInput.value.trim();
-    if (!siteId) return setMsg('Insert Site ID', true);
+  function mbAddEmpty(){
+    $("mbTbody").appendChild(mbRowTemplate({ enabled:true, name:"device", host:"", port:502, unit_id:1, id:"" }));
+    mbUpdateTargets();
+  }
 
-    setMsg('Loading...');
-    try {
-      const r = await fetch(/api/modbus/sites/);
-      if (!r.ok) throw new Error(HTTP );
+  async function mbLoad(siteId){
+    // endpoint “atteso”: /api/modbus/sites/{siteId}
+    const url = `/api/modbus/sites/${encodeURIComponent(siteId)}`;
+    try{
+      setBoxMsg("mbMsg", `Loading ${url} …`);
+      const r = await fetch(url, { cache:"no-store" });
+      if(r.status === 404){
+        setBoxMsg("mbMsg", `Endpoint non disponibile: ${url} (404).`, "err");
+        $("mbTbody").innerHTML = "";
+        mbUpdateTargets();
+        return;
+      }
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const cfg = await r.json();
 
-      tbody.innerHTML = '';
-      (cfg.devices || []).forEach(d => tbody.appendChild(rowTemplate(d)));
-      updateEnvPreview();
-      setMsg('Loaded');
-    } catch (e) {
-      setMsg('Load error: ' + e.message, true);
+      $("mbTbody").innerHTML = "";
+      (cfg.devices || []).forEach(d => $("mbTbody").appendChild(mbRowTemplate(d)));
+      mbUpdateTargets();
+      setBoxMsg("mbMsg", "Loaded.", "ok");
+    }catch(e){
+      setBoxMsg("mbMsg", `Load error: ${e.message}`, "err");
     }
   }
 
-  async function saveSite() {
-    const siteId = siteInput.value.trim();
-    if (!siteId) return setMsg('Insert Site ID', true);
-
-    const devices = devicesFromTable().map(d => {
-      // backend accetta id vuoto: lo genera
-      return d;
-    });
-
-    setMsg('Saving...');
-    try {
-      const payload = { site_id: siteId, devices };
-      const r = await fetch(/api/modbus/sites/, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+  async function mbSave(siteId){
+    const url = `/api/modbus/sites/${encodeURIComponent(siteId)}`;
+    try{
+      setBoxMsg("mbMsg", `Saving ${url} …`);
+      const payload = { site_id: siteId, devices: mbDevicesFromTable() };
+      const r = await fetch(url, {
+        method:"PUT",
+        headers:{ "Content-Type":"application/json" },
         body: JSON.stringify(payload)
       });
-      if (!r.ok) throw new Error(HTTP );
+      if(r.status === 404){
+        setBoxMsg("mbMsg", `Endpoint non disponibile: ${url} (404).`, "err");
+        return;
+      }
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const cfg = await r.json();
 
-      // refresh normalized data (ids)
-      tbody.innerHTML = '';
-      (cfg.devices || []).forEach(d => tbody.appendChild(rowTemplate(d)));
-      updateEnvPreview();
-      setMsg('Saved');
-    } catch (e) {
-      setMsg('Save error: ' + e.message, true);
+      $("mbTbody").innerHTML = "";
+      (cfg.devices || []).forEach(d => $("mbTbody").appendChild(mbRowTemplate(d)));
+      mbUpdateTargets();
+      setBoxMsg("mbMsg", "Saved.", "ok");
+    }catch(e){
+      setBoxMsg("mbMsg", `Save error: ${e.message}`, "err");
     }
   }
 
-  function addEmpty() {
-    tbody.appendChild(rowTemplate({ enabled:true, name:'device', host:'', port:502, unit_id:1, id:'' }));
-    updateEnvPreview();
+  // ---------- Edge cfg (placeholder) ----------
+  let edgeCfg = null;
+
+  async function edgeLoad(siteId){
+    const url = `/api/edge/${encodeURIComponent(siteId)}`;
+    try{
+      setBoxMsg("edgeMsg", `Loading ${url} …`);
+      const r = await fetch(url, { cache:"no-store" });
+      if(r.status === 404){
+        setBoxMsg("edgeMsg", `Endpoint non disponibile: ${url} (404).`, "err");
+        $("edgeJson").textContent = "(endpoint non disponibile)";
+        edgeCfg = null;
+        return;
+      }
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      edgeCfg = await r.json();
+      $("edgeJson").textContent = JSON.stringify(edgeCfg, null, 2);
+      setBoxMsg("edgeMsg", "Loaded.", "ok");
+    }catch(e){
+      setBoxMsg("edgeMsg", `Load error: ${e.message}`, "err");
+    }
   }
 
-  btnLoad.addEventListener('click', loadSite);
-  btnSave.addEventListener('click', saveSite);
-  btnAdd.addEventListener('click', addEmpty);
+  async function edgeSave(siteId){
+    const url = `/api/edge/${encodeURIComponent(siteId)}`;
+    try{
+      if(!edgeCfg) throw new Error("No cfg loaded.");
+      setBoxMsg("edgeMsg", `Saving ${url} …`);
+      const r = await fetch(url, {
+        method:"PUT",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify(edgeCfg)
+      });
+      if(r.status === 404){
+        setBoxMsg("edgeMsg", `Endpoint non disponibile: ${url} (404).`, "err");
+        return;
+      }
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      edgeCfg = await r.json();
+      $("edgeJson").textContent = JSON.stringify(edgeCfg, null, 2);
+      setBoxMsg("edgeMsg", "Saved.", "ok");
+    }catch(e){
+      setBoxMsg("edgeMsg", `Save error: ${e.message}`, "err");
+    }
+  }
 
-  // default helper
-  if (!siteInput.value) siteInput.value = 'PV_001';
-})();
-</script>
-<!-- =================== /Modbus Devices (Cloud Dashboard) =================== -->
-<script>
-async function apiGetEdgeCfg(siteId){
-  const r = await fetch(`/api/edge/${encodeURIComponent(siteId)}`);
-  if(!r.ok) throw new Error(`GET failed: ${r.status}`);
-  return await r.json();
-}
-async function apiPutEdgeCfg(siteId, cfg){
-  const r = await fetch(`/api/edge/${encodeURIComponent(siteId)}`, {
-    method: "PUT",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify(cfg)
+  // ---------- Bindings ----------
+  $("q").addEventListener("input", renderSites);
+  window.addEventListener("resize", () => chart.resize());
+
+  $("btnRefresh").addEventListener("click", () => { fetchSites(); if(selected) fetchSeries(); });
+  $("btnClearEvents").addEventListener("click", () => { $("events").innerHTML = ""; });
+
+  $("mbAdd").addEventListener("click", mbAddEmpty);
+
+  $("btnLoadAll").addEventListener("click", () => {
+    const siteId = $("cfgSiteId").value.trim();
+    if(!siteId) return;
+    mbLoad(siteId);
+    edgeLoad(siteId);
   });
-  if(!r.ok) throw new Error(`PUT failed: ${r.status}`);
-  return await r.json();
-}
 
-let currentCfg = null;
-
-function renderCfg(){
-  const list = document.getElementById("cfgList");
-  list.innerHTML = "";
-  const msg = document.getElementById("cfgMsg");
-
-  if(!currentCfg){
-    msg.textContent = "No config loaded.";
-    return;
-  }
-  msg.textContent = `Loaded ${currentCfg.devices.length} device(s).`;
-
-  currentCfg.devices.forEach((d, i) => {
-    const row = document.createElement("div");
-    row.style.display = "flex";
-    row.style.alignItems = "center";
-    row.style.justifyContent = "space-between";
-    row.style.padding = "8px 10px";
-    row.style.marginBottom = "8px";
-    row.style.borderRadius = "12px";
-    row.style.border = "1px solid rgba(255,255,255,.06)";
-    row.style.background = "rgba(255,255,255,.03)";
-
-    const left = document.createElement("div");
-    left.innerHTML = `<div style="font-weight:700">${d.name}</div>
-      <div style="color:var(--muted)">${d.host}:${d.port}  unit=${d.unit_id}</div>`;
-
-    const del = document.createElement("button");
-    del.textContent = "Del";
-    del.style.border = "0";
-    del.style.borderRadius = "10px";
-    del.style.padding = "8px 10px";
-    del.style.background = "rgba(255,77,109,.18)";
-    del.style.color = "var(--text)";
-    del.style.cursor = "pointer";
-    del.onclick = () => { currentCfg.devices.splice(i,1); renderCfg(); };
-
-    row.appendChild(left);
-    row.appendChild(del);
-    list.appendChild(row);
+  $("btnSaveAll").addEventListener("click", () => {
+    const siteId = $("cfgSiteId").value.trim();
+    if(!siteId) return;
+    mbSave(siteId);
+    edgeSave(siteId);
   });
-}
 
-async function loadCfg(){
-  const siteId = document.getElementById("cfgSiteId").value.trim();
-  const msg = document.getElementById("cfgMsg");
-  if(!siteId){ msg.textContent="Insert site_id."; return; }
+  $("edgeLoad").addEventListener("click", () => {
+    const siteId = $("cfgSiteId").value.trim();
+    if(!siteId) return;
+    edgeLoad(siteId);
+  });
 
-  try{
-    currentCfg = await apiGetEdgeCfg(siteId);
-    if(!currentCfg.devices) currentCfg.devices = [];
-    renderCfg();
-  }catch(e){
-    msg.textContent = `Load error: ${e.message}`;
-  }
-}
+  $("edgeSave").addEventListener("click", () => {
+    const siteId = $("cfgSiteId").value.trim();
+    if(!siteId) return;
+    edgeSave(siteId);
+  });
 
-async function saveCfg(){
-  const siteId = document.getElementById("cfgSiteId").value.trim();
-  const msg = document.getElementById("cfgMsg");
-  if(!siteId || !currentCfg){ msg.textContent="Load a config first."; return; }
-  currentCfg.site_id = siteId;
+  // ---------- Boot ----------
+  $("hostLabel").innerText = location.host;
 
-  try{
-    currentCfg = await apiPutEdgeCfg(siteId, currentCfg);
-    renderCfg();
-    msg.textContent = "Saved.";
-  }catch(e){
-    msg.textContent = `Save error: ${e.message}`;
-  }
-}
-
-function addDevice(){
-  const msg = document.getElementById("cfgMsg");
-  if(!currentCfg){ msg.textContent="Load a config first."; return; }
-
-  const name = document.getElementById("devName").value.trim() || `dev${currentCfg.devices.length+1}`;
-  const host = document.getElementById("devHost").value.trim();
-  const port = parseInt(document.getElementById("devPort").value.trim() || "502", 10);
-  const unit = parseInt(document.getElementById("devUnit").value.trim() || "1", 10);
-
-  if(!host){ msg.textContent="host required."; return; }
-  currentCfg.devices.push({name, host, port, unit_id: unit});
-  renderCfg();
-}
-
-window.addEventListener("DOMContentLoaded", () => {
-  const loadBtn = document.getElementById("cfgLoadBtn");
-  const saveBtn = document.getElementById("cfgSaveBtn");
-  const addBtn  = document.getElementById("cfgAddBtn");
-  if(loadBtn) loadBtn.onclick = loadCfg;
-  if(saveBtn) saveBtn.onclick = saveCfg;
-  if(addBtn)  addBtn.onclick  = addDevice;
-});
+  pushEvent("Boot", "Dashboard avviata. In attesa di telemetria.", "info");
+  fetchSites();
+  connectWS();
 </script>
+
 </body>
 </html>
-
-
-
