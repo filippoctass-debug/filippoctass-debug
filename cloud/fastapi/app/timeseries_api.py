@@ -8,18 +8,18 @@ router = APIRouter()
 @router.get("/site/{site_id}/series")
 def site_series(site_id: str, minutes: int = 120, every: str = "10s"):
     """
-    Returns downsampled series for a site:
-      - t: ISO timestamps
-      - p_ac_w
-      - poa_wm2
-    Uses Flux pivot() so fields come back as columns (no _field in records).
+    Ritorna serie recenti per un impianto:
+    - p_ac_w
+    - poa_wm2
+
+    Nota: usiamo pivot() -> i campi diventano colonne ("p_ac_w", "poa_wm2"),
+    quindi NON esistono più _field/_value nei record.
     """
 
     org = os.getenv("INFLUX_ORG", "")
     bucket = os.getenv("INFLUX_BUCKET", "")
     c = get_influx_client()
 
-    # Note: pivot() removes _field/_value and turns them into columns
     flux = f"""
 from(bucket: "{bucket}")
   |> range(start: -{minutes}m)
@@ -39,9 +39,7 @@ from(bucket: "{bucket}")
         for record in table.records:
             t = record.get_time()
             if t is None:
-                # skip malformed rows
                 continue
-
             out["t"].append(t.isoformat())
             out["p_ac_w"].append(record.values.get("p_ac_w"))
             out["poa_wm2"].append(record.values.get("poa_wm2"))
