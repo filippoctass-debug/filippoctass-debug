@@ -1,13 +1,11 @@
 ﻿services:
   edge-driver:
-    image: ghcr.io/filippoctass-debug/edge-driver:latest
-    restart: always
-    network_mode: host
-    labels:
-      - "com.centurylinklabs.watchtower.enable=true"
-    env_file:
-      - .env
-
+     image: ghcr.io/filippoctass-debug/edge-driver:latest
+     restart: unless-stopped
+     env_file:
+       - .env
+     volumes:
+       - ./certs:/certs:ro
   watchtower:
     image: containrrr/watchtower:latest
     restart: always
