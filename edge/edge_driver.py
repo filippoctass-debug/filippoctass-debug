@@ -304,8 +304,10 @@ def main() -> None:
 
     def publish(topic: str, payload: Dict[str, Any]) -> None:
         txt = safe_json(payload)
+        retain = (topic == cfg.topic_status)  # retain SOLO per lo status
+
         if mqtt_connected["ok"]:
-            info = mq.publish(topic, txt, qos=1)
+            info = mq.publish(topic, txt, qos=1, retain=retain)
             info.wait_for_publish(timeout=5)
             if info.rc != mqtt.MQTT_ERR_SUCCESS:
                 log.warning("publish failed rc=%s => enqueue", info.rc)
@@ -313,6 +315,7 @@ def main() -> None:
                 mqtt_connected["ok"] = False
         else:
             enqueue(topic, payload)
+
 
     while True:
         now = time.time()
