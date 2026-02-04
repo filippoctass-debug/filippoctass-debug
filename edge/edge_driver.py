@@ -48,14 +48,16 @@ def init_db() -> None:
     con = sqlite3.connect(DB_PATH, timeout=10)
     con.execute("PRAGMA journal_mode=WAL;")
     con.execute("PRAGMA synchronous=NORMAL;")
-    con.execute("""
+    con.execute(
+        """
         CREATE TABLE IF NOT EXISTS outbox(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts INTEGER NOT NULL,
             topic TEXT NOT NULL,
             payload TEXT NOT NULL
         )
-    """)
+    """
+    )
     con.commit()
     con.close()
 
@@ -203,10 +205,8 @@ def get_cfg() -> Cfg:
 
         mqtt_ca=os.getenv("MQTT_TLS_CA", "/certs/ca.crt").strip(),
         mqtt_insecure=env_bool("MQTT_TLS_INSECURE", False),
-        # Nota: con paho SNI/verify usa l'host passato a connect().
-        # mqtt_servername lo teniamo per futura evoluzione / chiarezza.
         mqtt_servername=(os.getenv("MQTT_TLS_SERVERNAME") or "").strip() or None,
-        mqtt_tls_min=(os.getenv("MQTT_TLS_MIN") or "").strip() or None,  # es: tlsv1.2
+        mqtt_tls_min=(os.getenv("MQTT_TLS_MIN") or "").strip() or None,
 
         topic_pub=topic_pub,
         topic_status=topic_status,
@@ -222,13 +222,8 @@ def get_cfg() -> Cfg:
 # MQTT helpers
 # ------------------------
 def build_tls_context(cfg: Cfg) -> ssl.SSLContext:
-    # carica CA e prepara contesto client
     ctx = ssl.create_default_context(purpose=ssl.Purpose.SERVER_AUTH, cafile=cfg.mqtt_ca)
 
-    # Richiedi sempre cert valido rispetto alla CA
-    ctx.verify_mode = ssl.CERT_REQUIRED
-
-    # TLS min version (opzionale)
     if cfg.mqtt_tls_min:
         v = cfg.mqtt_tls_min.lower().replace(" ", "")
         if v in ("tlsv1.2", "tls1.2", "1.2"):
@@ -236,10 +231,10 @@ def build_tls_context(cfg: Cfg) -> ssl.SSLContext:
         elif v in ("tlsv1.3", "tls1.3", "1.3"):
             ctx.minimum_version = ssl.TLSVersion.TLSv1_3
 
-    # Hostname verification:
-    # - se ti connetti via IP ma il cert ha CN=mosquitto => fallisce
-    # - con MQTT_TLS_INSECURE=true replichi `mosquitto_pub --insecure`
-    ctx.check_hostname = not cfg.mqtt_insecure
+    # Se ti connetti via IP e il cert ha CN=mosquitto, senza insecure fallisce.
+    if cfg.mqtt_insecure:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_REQUIRED
 
     return ctx
 
@@ -255,34 +250,19 @@ def main() -> None:
     cfg = get_cfg()
     init_db()
 
-    log.info(
-        "Starting edge-driver site_id=%s client_id=%s mqtt=%s:%s insecure=%s ca=%s",
-        cfg.site_id, cfg.client_id, cfg.mqtt_host, cfg.mqtt_port,
-        cfg.mqtt_insecure, cfg.mqtt_ca
-    )
-    if cfg.mqtt_servername:
-        log.info("MQTT_TLS_SERVERNAME=%s (nota: paho usa MQTT_HOST per SNI/verify)", cfg.mqtt_servername)
-
+    log.info("Starting edge-driver site_id=%s client_id=%s mqtt=%s:%s",
+             cfg.site_id, cfg.client_id, cfg.mqtt_host, cfg.mqtt_port)
     log.info("Topics pub=%s status=%s cmd=%s", cfg.topic_pub, cfg.topic_status, cfg.topic_cmd)
-    log.info(
-        "Targets: %s",
-        ", ".join([f"{t.name}@{t.host}:{t.port} unit={t.unit_id}" for t in cfg.modbus_targets]) or "(none)"
-    )
+    log.info("Targets: %s", ", ".join([f"{t.name}@{t.host}:{t.port} unit={t.unit_id}" for t in cfg.modbus_targets]) or "(none)")
 
     mq = mqtt.Client(client_id=cfg.client_id, protocol=mqtt.MQTTv5)
     if cfg.mqtt_user:
         mq.username_pw_set(cfg.mqtt_user, cfg.mqtt_pass)
 
-    # TLS
     tls_ctx = build_tls_context(cfg)
     mq.tls_set_context(tls_ctx)
-
-    # IMPORTANT:
-    # In paho, tls_insecure_set(True) disabilita l'host name verification nel layer TLS.
-    # Deve essere coerente con cfg.mqtt_insecure.
     mq.tls_insecure_set(cfg.mqtt_insecure)
 
-    # Reconnect policy
     mq.reconnect_delay_set(min_delay=1, max_delay=30)
 
     mqtt_connected = {"ok": False}
@@ -301,6 +281,7 @@ def main() -> None:
     # Last Will: status offline
     will_payload = {
         "ts": now_ts(),
+        "measurement": "edge_status",
         "site_id": cfg.site_id,
         "edge_id": cfg.client_id,
         "hostname": hostname(),
@@ -309,19 +290,10 @@ def main() -> None:
     }
     mq.will_set(cfg.topic_status, safe_json(will_payload), qos=1, retain=False)
 
-    # Connect loop
     while True:
         try:
             mq.connect(cfg.mqtt_host, cfg.mqtt_port, keepalive=30)
             break
-        except ssl.SSLError as e:
-            log.error(
-                "MQTT TLS failed: %s. "
-                "Se stai usando un IP come MQTT_HOST, metti MQTT_TLS_INSECURE=true "
-                "oppure usa un hostname che matcha il certificato.",
-                e
-            )
-            time.sleep(2)
         except Exception as e:
             log.warning("MQTT connect failed: %s (retry in 2s)", e)
             time.sleep(2)
@@ -345,10 +317,11 @@ def main() -> None:
     while True:
         now = time.time()
 
-        # status
+        # status (per UI)
         if now - last_status >= 5:
             status_payload = {
                 "ts": int(now),
+                "measurement": "edge_status",
                 "site_id": cfg.site_id,
                 "edge_id": cfg.client_id,
                 "hostname": hostname(),
@@ -362,7 +335,6 @@ def main() -> None:
             publish(cfg.topic_status, status_payload)
             last_status = now
 
-        # modbus reads
         any_ok = False
         target_results = []
 
@@ -372,6 +344,7 @@ def main() -> None:
                 any_ok = True
                 payload = {
                     "ts": int(now),
+                    "measurement": "pv_telemetry",
                     "site_id": cfg.site_id,
                     "fields": fields,
                     "tags": tags,
@@ -381,6 +354,7 @@ def main() -> None:
             except Exception as e:
                 err_payload = {
                     "ts": int(now),
+                    "measurement": "modbus_error",
                     "site_id": cfg.site_id,
                     "device": t.name,
                     "host": t.host,
@@ -391,15 +365,14 @@ def main() -> None:
                 publish(f"{cfg.topic_base}/{cfg.site_id}/modbus_error", err_payload)
                 target_results.append({"name": t.name, "ok": False, "error": str(e)})
 
-        # aggregated modbus status (per UI)
         publish(f"{cfg.topic_base}/{cfg.site_id}/modbus_status", {
             "ts": int(now),
+            "measurement": "modbus_status",
             "site_id": cfg.site_id,
             "modbus_ok": bool(any_ok),
             "results": target_results,
         })
 
-        # drain outbox
         if mqtt_connected["ok"]:
             n = drain(mq, max_n=200)
             if n:
