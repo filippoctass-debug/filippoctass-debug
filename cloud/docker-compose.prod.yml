@@ -36,17 +36,17 @@
       - "100.73.160.84:8000:8000"
     volumes:
       - ./mosquitto/certs:/mosquitto/certs:ro
+      - ./fastapi/app/mqtt_ingest.py:/app/app/mqtt_ingest.py:ro
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
-  watchtower-cloud:
+   watchtower-cloud:
     image: containrrr/watchtower:1.7.1
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - DOCKER_API_VERSION=1.44
-      # 👇 NECESSARIO se l’immagine GHCR è privata o richiede auth
       - REPO_USER=${GHCR_USER}
       - REPO_PASS=${GHCR_TOKEN}
-    command: --interval 60 --cleanup --label-enable
+    command: --interval 60 --cleanup --label-enable --registry-auth
