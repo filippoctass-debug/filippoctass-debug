@@ -9,13 +9,10 @@
       - ./mosquitto/certs:/mosquitto/certs
       - ./mosquitto/data:/mosquitto/data
       - ./mosquitto/log:/mosquitto/log
-      # se ti serve anche qui (opzionale)
-      - ./mosquitto/certs:/app/certs:ro
 
   influxdb:
     image: influxdb:2.7
     restart: unless-stopped
-    # PROD: accesso solo locale host
     ports:
       - "127.0.0.1:8086:8086"
     env_file:
@@ -40,7 +37,7 @@
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
-   watchtower-cloud:
+  watchtower-cloud:
     image: containrrr/watchtower:1.7.1
     restart: unless-stopped
     volumes:
