@@ -3,3 +3,6 @@ topic readwrite pv/#
 
 user cr_ingest
 topic read pv/+/telemetry
+topic read pv/+/status
+topic read pv/+/modbus_status
+topic read pv/+/modbus_error
