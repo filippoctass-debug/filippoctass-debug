@@ -1,6 +1,10 @@
-.env
-.env.*
-*.bak
+.git
 __pycache__/
 *.pyc
-.git/
+*.pyo
+*.pyd
+*.sqlite3
+data/
+certs/
+.env
+docker-compose*.yml
