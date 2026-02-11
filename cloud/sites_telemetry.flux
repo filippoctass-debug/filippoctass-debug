@@ -1,0 +1,5 @@
+from(bucket:"cci")
+  |> range(start:-2h)
+  |> filter(fn:(r) => r._measurement == "pv_telemetry_v2")
+  |> keep(columns:["site_id"])
+  |> distinct(column:"site_id")

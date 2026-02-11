@@ -1,0 +1,17 @@
+[ req ]
+default_bits       = 2048
+prompt             = no
+default_md         = sha256
+distinguished_name = dn
+req_extensions     = req_ext
+
+[ dn ]
+CN = mosquitto
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = mosquitto
+DNS.2 = localhost
+DNS.3 = desktop-7mopvjm.tail3a4494.ts.net

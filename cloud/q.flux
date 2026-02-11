@@ -1,0 +1,5 @@
+from(bucket: "cci")
+  |> range(start: -30m)
+  |> filter(fn: (r) => r.site_id == "PV_002")
+  |> filter(fn: (r) => r._measurement == "edge_status")
+  |> last()
