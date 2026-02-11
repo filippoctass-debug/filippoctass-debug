@@ -23,3 +23,9 @@ def sites_delete(site_id: str):
     if not ok:
         raise HTTPException(status_code=404, detail="site_id not found")
     return {"ok": True, "deleted": site_id}
+
+
+# devices config (PV -> devices)
+from app.devices_api import router as devices_router
+router.include_router(devices_router)
+
