@@ -3,7 +3,7 @@
     image: eclipse-mosquitto:2.0
     restart: unless-stopped
     ports:
-      - "100.73.160.84:8883:8883"
+      - "18883:8883"
     volumes:
       - ./mosquitto/config:/mosquitto/config
       - ./mosquitto/certs:/mosquitto/certs
@@ -30,7 +30,7 @@
       - influxdb
       - mosquitto
     ports:
-      - "100.73.160.84:8000:8000"
+      - "8000:8000"
     volumes:
       - ./mosquitto/certs:/mosquitto/certs:ro
       - ./fastapi/app/mqtt_ingest.py:/app/app/mqtt_ingest.py:ro

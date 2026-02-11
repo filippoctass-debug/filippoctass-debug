@@ -1,4 +1,5 @@
 ﻿from fastapi import FastAPI
+from app.middleware_fix import FixObjectObjectSiteMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.modbus.router import router as edge_router
@@ -17,3 +18,8 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 @app.on_event("startup")
 def _startup():
     start_ingest()
+
+from app.ws import websocket_endpoint
+app.add_api_websocket_route("/ws/status", websocket_endpoint)
+
+

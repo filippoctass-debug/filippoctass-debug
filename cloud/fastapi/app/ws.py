@@ -1,15 +1,12 @@
-import asyncio
-from fastapi import APIRouter, WebSocket
-from app.status import get_control_room_status
+﻿import asyncio
+from fastapi import WebSocket, WebSocketDisconnect
 
-ws_router=APIRouter()
-
-@ws_router.websocket("/ws/status")
-async def ws_status(ws:WebSocket):
+async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     try:
         while True:
-            await ws.send_json(get_control_room_status(lookback_minutes=10))
+            # heartbeat ogni 2s
+            await ws.send_json({"type": "heartbeat"})
             await asyncio.sleep(2)
-    except Exception:
-        pass
+    except WebSocketDisconnect:
+        return

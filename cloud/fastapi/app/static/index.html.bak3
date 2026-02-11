@@ -584,10 +584,6 @@
 
   // ---------- State ----------
   let selected = null;
-
-  // --- range (minutes) persisted ---
-  let rangeMinutes = Number(localStorage.getItem("rangeMinutes") || 120);
-  if(!isFinite(rangeMinutes) || rangeMinutes<=0) rangeMinutes = 120;
   let sitesStatus = [];   // from WS
   let allSites = [];      // from /sites
   let ws = null;
@@ -621,35 +617,21 @@
     const el = $("siteList");
     el.innerHTML = "";
 
-    const list = (allSites || [])
-      .map(s => ({...s, site_id: String(s.site_id)}))
-      .filter(s => s.site_id.toLowerCase().includes(q));
+    const list = allSites.filter(s => s.toLowerCase().includes(q));
 
     if(list.length === 0){
       el.innerHTML = `<div style="color:#9fb0d0;font-size:12px;padding:10px;line-height:1.35;">
         Nessun impianto ancora.<br>
-        Se l?edge ? online ma non compare, significa che non sta scrivendo punti su Influx (o tag/measurement non compatibili).
+        Se l’edge è online ma non compare, significa che non sta scrivendo punti su Influx (o tag/measurement non compatibili).
       </div>`;
       return;
     }
 
-    for(const s of list){
-      const sid = String(s.site_id);
-      const st = (sitesStatus || []).find(x => String(x.site_id) === sid);
-
-      // ok/age: prefer WS, fallback /sites
-      const ok = (st && ("ok" in st)) ? !!st.ok : !!s.online;
-
-      const age = (st && (st.age_s != null)) ? st.age_s : (() => {
-        try{
-          if(!s.last_edge_status) return null;
-          const t = new Date(s.last_edge_status).getTime();
-          if(!isFinite(t)) return null;
-          return Math.max(0, Math.round((Date.now()-t)/1000));
-        }catch(e){ return null; }
-      })();
-
-      const active = (sid === String(selected));
+    for(const sid of list){
+      const st = sitesStatus.find(x => x.site_id === sid);
+      const ok = st ? !!st.ok : false;
+      const age = st ? st.age_s : null;
+      const active = (sid === selected);
 
       const row = document.createElement("div");
       row.className = "site" + (active ? " active" : "");
@@ -660,58 +642,44 @@
           <div class="dot ${ok ? "ok" : "bad"}"></div>
           <div>
             <div class="name">${sid}</div>
-            <div class="meta">${(age!=null) ? ("age " + age + "s") : (ok ? "online (da /sites)" : "offline (da /sites)")}</div>
+            <div class="meta">${st ? ("age " + age + "s") : "no telemetry yet"}</div>
           </div>
         </div>
         <div class="badge">${ok ? "ONLINE" : "OFFLINE"}</div>
       `;
       el.appendChild(row);
     }
-}
+  }
 
   function refreshSelectedKpi(){
     if(!selected){
-      $("k_status").innerText="?";
-      $("k_age").innerText="?";
-      $("k_pac").innerText="?";
-      $("k_poa").innerText="?";
-      $("k_health").innerText="?";
+      $("k_status").innerText="—";
+      $("k_age").innerText="—";
+      $("k_pac").innerText="—";
+      $("k_poa").innerText="—";
+      $("k_health").innerText="—";
       $("k_status").style.color = "var(--text)";
       $("k_health").style.color = "var(--muted)";
       return;
     }
 
-    const st = (sitesStatus || []).find(x => String(x.site_id) === String(selected));
-    const ss = (allSites || []).find(x => String(x.site_id) === String(selected));
-
-    const ok = (st && ("ok" in st)) ? !!st.ok : !!(ss && ss.online);
-
-    const age = (st && (st.age_s != null)) ? st.age_s : (() => {
-      try{
-        if(!ss || !ss.last_edge_status) return null;
-        const t = new Date(ss.last_edge_status).getTime();
-        if(!isFinite(t)) return null;
-        return Math.max(0, Math.round((Date.now()-t)/1000));
-      }catch(e){ return null; }
-    })();
+    const st = sitesStatus.find(x => x.site_id === selected);
+    const ok = st ? !!st.ok : false;
+    const age = st ? st.age_s : null;
 
     $("k_status").innerText = ok ? "ONLINE" : "OFFLINE";
     $("k_status").style.color = ok ? "var(--ok)" : "var(--bad)";
+    $("k_age").innerText = st ? (`Ultimo dato: ${st.last_ts || "?"} | age ${age}s`) : "Nessun dato ancora";
 
-    const last = (st && st.last_ts) ? st.last_ts : ((ss && ss.last_edge_status) ? ss.last_edge_status : "?");
-    $("k_age").innerText = (age!=null) ? (`Ultimo dato: ${last} | age ${age}s`) : "Nessun dato ancora";
+    const pac = st?.fields?.p_ac_w;
+    const poa = st?.fields?.poa_wm2;
 
-    // KPI: prefer WS fields; i fallback da serie li aggiorna fetchSeries()
-    if(st && st.fields){
-      const pac = st.fields.p_ac_w;
-      const poa = st.fields.poa_wm2;
-      $("k_pac").innerText = fmt(pac ?? null, "W");
-      $("k_poa").innerText = fmt(poa ?? null, "W/m?");
-    }
+    $("k_pac").innerText = fmt(pac ?? null, "W");
+    $("k_poa").innerText = fmt(poa ?? null, "W/m²");
 
-    $("k_health").innerText = ok ? "OK" : ((age!=null) ? "STALE" : "?");
-    $("k_health").style.color = ok ? "var(--ok)" : ((age!=null) ? "var(--warn)" : "var(--muted)");
-}
+    $("k_health").innerText = st ? (ok ? "OK" : "STALE") : "—";
+    $("k_health").style.color = st ? (ok ? "var(--ok)" : "var(--warn)") : "var(--muted)";
+  }
 
   function setSelected(siteId){
     selected = siteId;
@@ -741,7 +709,7 @@
   async function fetchSeries(){
     if(!selected) return;
     try{
-      const minutes = rangeMinutes;
+      const minutes = 120;
       $("rangePill").innerText = `range: ${minutes}m`;
 
       const r = await fetch(`/api/site/${encodeURIComponent(selected)}/series?minutes=${minutes}&every=10s`, { cache:"no-store" });
@@ -749,36 +717,23 @@
       const j = await r.json();
 
       const t = (j.t || []).map(x => new Date(x).toLocaleTimeString());
-      const pac = Array.isArray(j.p_ac_w) ? j.p_ac_w : [];
-      const poa = Array.isArray(j.poa_wm2) ? j.poa_wm2 : [];
+      const pac = j.p_ac_w || [];
+      const poa = j.poa_wm2 || [];
 
-      // KPI fallback: usa ultimo punto serie se WS non fornisce fields
-      try{
-        if(pac.length) $("k_pac").innerText = fmt(pac[pac.length-1], "W");
-        if(poa.length) $("k_poa").innerText = fmt(poa[poa.length-1], "W/m?");
-      }catch(e){}
-
-      // niente dati => overlay e stop
-      if(!t.length){
-        try{ setNoData(true); }catch(e){}
-        return;
-      }
-
-      try{ setNoData(false); }catch(e){}
-
-      // IMPORTANT: merge con baseOption (non usare notMerge:true)
       chart.setOption({
         xAxis: { data: t },
         series: [
-          { name: 'Potenza AC (W)', type: 'line', smooth:true, showSymbol:false, data: pac },
-          { name: 'POA (W/m?)',     type: 'line', smooth:true, showSymbol:false, yAxisIndex: 1, data: poa }
+          { data: pac },
+          { data: poa }
         ]
-      }, { notMerge: false, lazyUpdate: true });
+      }, { notMerge: true });
 
     }catch(e){
+      // non spammiamo sempre: solo se l’utente ha scelto un sito
       pushEvent("Serie", `Impossibile caricare serie per ${selected}: ${e.message}`, "warn");
     }
   }
+
   // ---------- WS ----------
   function connectWS(){
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -795,37 +750,21 @@
       setTimeout(connectWS, 1200);
     };
 
-    // --- WS update throttling (avoid spamming API) ---
-    let _wsTick = 0;
-    let _wsTimer = null;
-    let _lastSitesFetch = 0;
-
     ws.onmessage = (ev) => {
       try{
         const j = JSON.parse(ev.data);
-        if (j && Array.isArray(j.sites)) {
-          sitesStatus = j.sites;
+        sitesStatus = j.sites || [];
+
+        // autorefresh sites (autodiscovery)
+        const before = allSites.length;
+        fetchSites();
+
+        refreshSelectedKpi();
+        if(selected) fetchSeries();
+
+        if(allSites.length > before){
+          pushEvent("Nuovo impianto", "Rilevato automaticamente (nuove serie in Influx).", "info");
         }
-
-        const now = Date.now();
-        // throttle: coalesce updates every 1200ms
-        _wsTick++;
-        if(_wsTimer) return;
-        _wsTimer = setTimeout(() => {
-          _wsTimer = null;
-          const n = _wsTick; _wsTick = 0;
-
-          // refresh KPI + series (selected only)
-          refreshSelectedKpi();
-          if(selected) fetchSeries();
-
-          // refresh /sites at most every 8s (autodiscovery)
-          if(now - _lastSitesFetch > 8000){
-            _lastSitesFetch = now;
-            fetchSites();
-          }
-        }, 1200);
-
       }catch(e){
         // ignore
       }
@@ -834,32 +773,6 @@
 
   // ---------- Chart ----------
   const chart = echarts.init($("chart1"));
-
-  // --- chart no-data overlay ---
-  function setNoData(show, msg="Nessun dato nel range selezionato"){
-    let el = document.getElementById("chartNoData");
-    if(!el){
-      el = document.createElement("div");
-      el.id = "chartNoData";
-      el.style.position="absolute";
-      el.style.inset="0";
-      el.style.display="flex";
-      el.style.alignItems="center";
-      el.style.justifyContent="center";
-      el.style.pointerEvents="none";
-      el.style.color="var(--muted)";
-      el.style.fontWeight="700";
-      el.style.letterSpacing=".2px";
-      el.style.fontSize="13px";
-      // chart container is #chart1 parent (card) so we attach to #chart1 wrapper
-      const host = $("chart1").parentElement;
-      if(host) host.style.position="relative";
-      (host || document.body).appendChild(el);
-    }
-    el.textContent = msg;
-    el.style.opacity = show ? "1" : "0";
-  }
-
   const baseOption = {
     grid: { left: 46, right: 16, top: 26, bottom: 34 },
     tooltip: { trigger: 'axis' },

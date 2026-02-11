@@ -3,7 +3,7 @@
     image: eclipse-mosquitto:2.0
     restart: unless-stopped
     ports:
-      - "100.73.160.84:8883:8883"
+      - "18883:8883"
     volumes:
       - ./mosquitto/config:/mosquitto/config
       - ./mosquitto/certs:/mosquitto/certs
@@ -13,7 +13,6 @@
   influxdb:
     image: influxdb:2.7
     restart: unless-stopped
-    # DEV: puoi esporre anche su 18086 se vuoi la UI “spostata”
     ports:
       - "127.0.0.1:18086:8086"
     env_file:
@@ -32,19 +31,10 @@
       - influxdb
       - mosquitto
     ports:
-      - "100.73.160.84:8000:8000"
+      - "8000:8000"
     volumes:
-      # DEV: codice live
       - ./fastapi/app:/app/app
       - ./mosquitto/certs:/mosquitto/certs:ro
 
-  # DEV: di default NON avviare watchtower
-  watchtower-cloud:
-    profiles: ["watchtower"]
-    image: containrrr/watchtower:1.7.1
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - DOCKER_API_VERSION=1.44
-    command: --interval 60 --cleanup --label-enable
+
+

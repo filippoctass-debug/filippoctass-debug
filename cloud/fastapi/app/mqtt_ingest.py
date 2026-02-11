@@ -6,7 +6,6 @@ from typing import Optional
 
 import paho.mqtt.client as mqtt
 from influxdb_client import Point, WritePrecision
-from influxdb_client.client.write_api import SYNCHRONOUS
 
 from app.influx import get_influx_client
 
@@ -14,7 +13,6 @@ _thread: Optional[threading.Thread] = None
 
 
 def _log(msg: str):
-    # log semplice, visibile con `docker compose logs control-room-api`
     print(f"[mqtt_ingest] {msg}", flush=True)
 
 
@@ -40,7 +38,10 @@ def _on_connect(client, userdata, flags, reason_code, properties=None):
     modbus_status = f"{base}/+/modbus_status"
     modbus_error = f"{base}/+/modbus_error"
 
-    _log(f"CONNECTED rc={reason_code}. subscribing to: {telemetry}, {status}, {modbus_status}, {modbus_error}")
+    _log(
+        f"CONNECTED rc={reason_code}. subscribing to: "
+        f"{telemetry}, {status}, {modbus_status}, {modbus_error}"
+    )
 
     client.subscribe(telemetry, qos=1)
     client.subscribe(status, qos=1)
@@ -153,6 +154,13 @@ def _on_message(client, userdata, msg):
         _log(f"DROP missing site_id topic={topic} payload={_safe_json(payload)}")
         return
 
+
+    # persist site in registry (once seen, stays until user deletes)
+    try:
+        from app.sites import register_site
+        register_site(site_id)
+    except Exception as e:
+        _log(f"registry WARN site_id={site_id} err={e}")
     influx = userdata["influx"]
 
     try:
@@ -171,9 +179,11 @@ def _on_message(client, userdata, msg):
             _log(f"WROTE modbus_error site_id={site_id}")
             return
 
-        # default telemetry
         _write_telemetry(influx, site_id, payload)
-        _log(f"WROTE telemetry site_id={site_id} meas={payload.get('measurement','pv_telemetry')}")
+        _log(
+            f"WROTE telemetry site_id={site_id} "
+            f"meas={payload.get('measurement','pv_telemetry')}"
+        )
     except Exception as e:
         _log(f"ERROR write topic={topic} site_id={site_id} err={e}")
 
@@ -182,7 +192,6 @@ def _run():
     _log("START mqtt_ingest thread")
 
     influx = get_influx_client()
-    # smoke check: ping influx
     try:
         ok = influx.ping()
         _log(f"INFLUX ping={ok} url={os.getenv('INFLUX_URL','')}")
@@ -200,8 +209,14 @@ def _run():
 
     client = mqtt.Client(protocol=mqtt.MQTTv5)
     client.username_pw_set(user, pw)
-    client.tls_set(ca_certs=ca)
-    client.tls_insecure_set(insecure)
+
+    if insecure:
+        # usa trust store di default, ma disabilita verify/hostname (utile in dev)
+        client.tls_set()
+        client.tls_insecure_set(True)
+    else:
+        client.tls_set(ca_certs=ca)
+        client.tls_insecure_set(False)
 
     client.on_connect = _on_connect
     client.on_message = _on_message
@@ -224,3 +239,4 @@ def start_ingest():
         return
     _thread = threading.Thread(target=_run, daemon=True)
     _thread.start()
+

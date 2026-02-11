@@ -10,7 +10,8 @@ RUN apt-get update \
 
 WORKDIR /app
 
-RUN useradd -m -u 10001 appuser
+RUN addgroup --gid 1000 appuser \
+ && adduser --uid 1000 --gid 1000 --disabled-password --gecos "" appuser
 
 COPY requirements.txt /app/requirements.txt
 RUN pip install -r /app/requirements.txt

@@ -23,7 +23,7 @@ def site_series(site_id: str, minutes: int = 120, every: str = "10s"):
     flux = f"""
 from(bucket: "{bucket}")
   |> range(start: -{minutes}m)
-  |> filter(fn: (r) => r._measurement == "pv_telemetry")
+  |> filter(fn: (r) => r._measurement == "pv_telemetry_v2")
   |> filter(fn: (r) => r.site_id == "{site_id}")
   |> filter(fn: (r) => r._field == "p_ac_w" or r._field == "poa_wm2")
   |> aggregateWindow(every: {every}, fn: mean, createEmpty: false)
