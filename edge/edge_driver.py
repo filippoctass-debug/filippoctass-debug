@@ -461,6 +461,14 @@ def build_tls_context(cfg: Cfg) -> Optional[ssl.SSLContext]:
 # ------------------------
 # Setpoint write (best-effort, address configurable)
 # ------------------------
+# Many datasheets specify holding registers as 4xxxx (1-based). pymodbus uses 0-based addresses.
+SUNSPEC_ADDR_IS_4X = os.getenv("SUNSPEC_ADDR_IS_4X", "true").strip().lower() in ("1","true","yes","y","on")
+
+def to_modbus_addr(addr: int) -> int:
+    # If address comes as 4xxxx (1-based), convert to 0-based.
+    # Example: 40231 -> 40230
+    return max(0, addr - 1) if SUNSPEC_ADDR_IS_4X else addr
+
 # Per-device override example:
 #   SUNSPEC_SETPOINT_ADDR_inv_1=40210
 # Fallback:
@@ -500,7 +508,7 @@ def write_setpoint_pct(t: ModbusTarget, pct: int) -> None:
     try:
         if not mb.connect():
             raise TimeoutError(f"connect failed to {t.host}:{t.port}")
-        rr = mb.write_register(address=addr, value=int(pct), slave=t.unit_id)
+        rr = mb.write_register(address=to_modbus_addr(addr), value=int(pct), slave=t.unit_id)
         if rr.isError():
             raise RuntimeError(f"write_register failed addr={addr} pct={pct}")
     finally:
