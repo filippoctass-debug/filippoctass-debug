@@ -522,6 +522,36 @@
         </div>
         <div id="chart1" class="chartBox"></div>
         <div id="invPanel" class="chartBox" style="display:none; padding:10px 6px 0;">
+  <div style="display:grid; grid-template-columns: repeat(4, minmax(180px,1fr)); gap:14px;">
+    <div class="panel" style="min-height:200px; padding:10px;">
+      <div class="panelHeader"><div><div class="h">Potenza AC</div><div class="s mono" id="inv_pac_ts">—</div></div></div>
+      <div id="invGaugePac" style="height:150px;"></div>
+    </div>
+    <div class="panel" style="min-height:200px; padding:10px;">
+      <div class="panelHeader"><div><div class="h">Vdc</div><div class="s">V</div></div></div>
+      <div id="invGaugeVdc" style="height:150px;"></div>
+    </div>
+    <div class="panel" style="min-height:200px; padding:10px;">
+      <div class="panelHeader"><div><div class="h">Grid V</div><div class="s">V</div></div></div>
+      <div id="invGaugeGridV" style="height:150px;"></div>
+    </div>
+    <div class="panel" style="min-height:200px; padding:10px;">
+      <div class="panelHeader"><div><div class="h">Frequenza</div><div class="s">Hz</div></div></div>
+      <div id="invGaugeHz" style="height:150px;"></div>
+    </div>
+  </div>
+  <div style="display:grid; grid-template-columns: 1fr; gap:14px; margin-top:14px;">
+    <div class="panel" style="min-height:260px;">
+      <div class="panelHeader"><div><div class="h">Trend inverter</div><div class="s">ultimi minuti (live)</div></div></div>
+      <div id="invTrend" style="height:210px;"></div>
+    </div>
+  </div>
+  <div style="margin-top:14px;">
+    <div class="panel" style="min-height:240px;">
+      <div class="panelHeader"><div><div class="h">Raw</div><div class="s">payload latest</div></div></div>
+      <div class="msg mono" id="inv_raw" style="white-space:pre-wrap; min-height:140px;">(raw)</div>
+    </div>
+  </div>
           <div style="display:grid; grid-template-columns: repeat(4, minmax(160px,1fr)); gap:14px;">
             <div class="card" style="min-height:140px;">
               <div class="label">Potenza AC</div>
@@ -549,7 +579,7 @@
               <div class="panelHeader">
                 <div>
                   <div class="h">Dettagli inverter</div>
-                  <div class="s">Valori live</div>
+                  <div class="s">Valori live da /devices/{id}/latest</div>
                 </div>
               </div>
               <div class="msg mono" id="inv_raw" style="white-space:pre-wrap; min-height:140px;">(raw)</div>
@@ -648,22 +678,22 @@
   </div>
 </div>
 
-
 <script>
   const $ = (id) => document.getElementById(id);
 
   // ---------- State ----------
-  let selected = null; // PV id
-  let selectedDevice = null; // {site_id, id}
+  let selected = null;
+
+  // --- range (minutes) persisted ---
   let rangeMinutes = Number(localStorage.getItem("rangeMinutes") || 120);
   if(!isFinite(rangeMinutes) || rangeMinutes<=0) rangeMinutes = 120;
-
   let sitesStatus = [];   // from WS
+  let deviceStatusBySite = {}; // site_id -> {total, online, devices[]}
+  let viewMode = "pv"; // pv|inv
   let allSites = [];      // from /sites
-
-  let devicesBySite = {};       // siteId -> devices[] (config list)
-  let deviceStatusBySite = {};  // siteId -> { total, online, devices[] } (with ok)
-  let expandedSites = {};       // siteId -> bool
+  let devicesBySite = {}; // siteId -> devices[]
+  let expandedSites = {}; // siteId -> bool
+  let selectedDevice = null; // {site_id, id}
 
   let ws = null;
 
@@ -691,70 +721,6 @@
     while(el.children.length > 10) el.removeChild(el.lastChild);
   }
 
-  // ---------- Views ----------
-  function showPVView(){
-    try{
-      $("chart1").style.display = "";
-      const inv = $("invPanel"); if(inv) inv.style.display = "none";
-      chart.resize();
-    }catch(e){}
-  }
-
-  function showInvView(){
-    try{
-      $("chart1").style.display = "none";
-      const inv = $("invPanel"); if(inv) inv.style.display = "";
-    }catch(e){}
-  }
-
-  function setSelectedPV(siteId){
-    selected = String(siteId);
-    selectedDevice = null;
-    showPVView();
-    $("title").innerText = `Impianto ${selected}`;
-    $("subtitle").innerText = `Telemetria & KPI live per ${selected}.`;
-    renderSites();
-    refreshSelectedKpi();
-    fetchSeries();
-  }
-
-  async function setSelectedDevice(siteId, deviceId, deviceName){
-    selected = String(siteId);
-    selectedDevice = { site_id: String(siteId), id: String(deviceId) };
-    showInvView();
-
-    $("title").innerText = `${deviceName || deviceId}`;
-    $("subtitle").innerText = `Dettaglio inverter ${deviceId} (${siteId})`;
-
-    renderSites();
-    await fetchInverterLatest(siteId, deviceId);
-  }
-
-  // ---------- Render sidebar ----------
-  function pvOkFromStatus(sid){
-    const st = (sitesStatus || []).find(x => String(x.site_id) === String(sid));
-    const ss = (allSites || []).find(x => String(x.site_id) === String(sid));
-    return (st && ("ok" in st)) ? !!st.ok : !!(ss && ss.online);
-  }
-
-  function pvAge(sid){
-    const st = (sitesStatus || []).find(x => String(x.site_id) === String(sid));
-    const ss = (allSites || []).find(x => String(x.site_id) === String(sid));
-    if(st && st.age_s != null) return st.age_s;
-    try{
-      if(!ss || !ss.last_edge_status) return null;
-      const t = new Date(ss.last_edge_status).getTime();
-      if(!isFinite(t)) return null;
-      return Math.max(0, Math.round((Date.now()-t)/1000));
-    }catch(e){ return null; }
-  }
-
-  function invDotClass(invOk){
-    if(invOk === true) return "ok";
-    if(invOk === false) return "bad";
-    return "unk";
-  }
-
   function renderSites(){
     const q = $("q").value.trim().toLowerCase();
     const el = $("siteList");
@@ -776,6 +742,7 @@
       const sid = String(s.site_id);
       const st = (sitesStatus || []).find(x => String(x.site_id) === sid);
 
+      // PV status
       const pvOk = (st && ("ok" in st)) ? !!st.ok : !!s.online;
 
       const age = (st && (st.age_s != null)) ? st.age_s : (() => {
@@ -798,8 +765,6 @@
       };
 
       const expanded = !!expandedSites[sid];
-      const ds = deviceStatusBySite[sid];
-      const ratio = ds ? (` | ${ds.online}/${ds.total}`) : "";
 
       row.innerHTML = `
         <div class="siteRow">
@@ -807,12 +772,12 @@
             <div class="dot ${pvOk ? "ok" : "bad"}"></div>
             <div>
               <div class="name">${sid}</div>
-              <div class="meta">${(age!=null) ? ("age " + age + "s") : (pvOk ? "online" : "offline")}</div>
+              <div class="meta">${(age!=null) ? ("age " + age + "s") : (pvOk ? "online (da /sites)" : "offline (da /sites)")}</div>
             </div>
           </div>
           <div class="siteRight">
             <button class="toggleBtn" data-kind="toggle" title="Espandi">${expanded ? "▾" : "▸"}</button>
-            <div class="badge">${pvOk ? "ONLINE" : "OFFLINE"}${ratio}</div>
+            <div class="badge">${pvOk ? "ONLINE" : "OFFLINE"}${(() => { const ds=deviceStatusBySite[sid]; if(!ds) return ""; return " | " + ds.online + "/" + ds.total; })()}</div>
           </div>
         </div>
       `;
@@ -820,44 +785,39 @@
       const tgl = row.querySelector('[data-kind="toggle"]');
       if(tgl){
         tgl.onclick = async (ev) => {
-          ev.stopPropagation();
-          expandedSites[sid] = !expandedSites[sid];
+          await fetchDeviceStatus(sid);
 
-          if(expandedSites[sid]){
-            // carico status + devices SOLO QUI (async) e poi rerender
-            await fetchDeviceStatus(sid);
-            if(!devicesBySite[sid]) await fetchDevices(sid);
-          }
+          ev.stopPropagation();
+          await fetchDeviceStatus(sid);
+          expandedSites[sid] = !expandedSites[sid];
+          if(expandedSites[sid] && !devicesBySite[sid]) await fetchDevices(sid);
           renderSites();
         };
       }
 
       el.appendChild(row);
 
+      // children devices
       if(expandedSites[sid]){
         const devs = (devicesBySite[sid] || []);
         for(const d of devs){
           const did = String(d.id || "");
           const nm = d.name || did || "device";
-          const invOk = (d.ok === true) ? true : (d.ok === false ? false : null);
-          const dotCls = (invOk === true) ? "ok" : (invOk === false ? "bad" : "unk");
+          const invOk = (() => { const st = getDeviceOk(sid, did); return (st===true)?true:(st===false)?false:((d.ok===true)?true:((d.ok===false)?false:null)); })();
 
           const child = document.createElement("div");
           child.className = "site dev";
-
           const activeDev = selectedDevice && selectedDevice.site_id===sid && selectedDevice.id===did;
           if(activeDev) child.classList.add("active");
 
           child.onclick = () => {
-            selected = sid;
+            selected = sid; // mantiene PV selezionato
             selectedDevice = { site_id: sid, id: did };
             renderSites();
-
-            showInvView();
-            $("title").innerText = `${nm}`;
-            $("subtitle").innerText = `Dettaglio inverter ${did} (${sid})`;
-            fetchInverterLatest(sid, did);
+            renderDeviceView(sid, did, nm);
           };
+
+          const dotCls = (invOk === true) ? "ok" : (invOk === false ? "bad" : "unk");
 
           child.innerHTML = `
             <div class="siteRow">
@@ -877,52 +837,308 @@
         }
       }
     }
-  }
+}
 
-  async function toggleSite(sid){
-    const siteId = String(sid);
-    expandedSites[siteId] = !expandedSites[siteId];
-    if(expandedSites[siteId]){
-      await fetchDeviceStatus(siteId);
-      if(!devicesBySite[siteId]) await fetchDevices(siteId);
-    }
-    renderSites();
-  }
-
-  // ---------- KPI (top cards) ----------
   function refreshSelectedKpi(){
     if(!selected){
-      $("k_status").innerText="—";
-      $("k_age").innerText="—";
-      $("k_pac").innerText="—";
-      $("k_poa").innerText="—";
-      $("k_health").innerText="—";
+      $("k_status").innerText="?";
+      $("k_age").innerText="?";
+      $("k_pac").innerText="?";
+      $("k_poa").innerText="?";
+      $("k_health").innerText="?";
       $("k_status").style.color = "var(--text)";
       $("k_health").style.color = "var(--muted)";
       return;
     }
 
-    // Se sto guardando inverter, non tocchiamo le 4 KPI PV (le lasciamo a PV, come base)
-    // (poi possiamo fare “KPI inverter” dedicate nel pannello inverter)
     const st = (sitesStatus || []).find(x => String(x.site_id) === String(selected));
     const ss = (allSites || []).find(x => String(x.site_id) === String(selected));
 
     const ok = (st && ("ok" in st)) ? !!st.ok : !!(ss && ss.online);
-    const age = pvAge(selected);
+
+    const age = (st && (st.age_s != null)) ? st.age_s : (() => {
+      try{
+        if(!ss || !ss.last_edge_status) return null;
+        const t = new Date(ss.last_edge_status).getTime();
+        if(!isFinite(t)) return null;
+        return Math.max(0, Math.round((Date.now()-t)/1000));
+      }catch(e){ return null; }
+    })();
 
     $("k_status").innerText = ok ? "ONLINE" : "OFFLINE";
     $("k_status").style.color = ok ? "var(--ok)" : "var(--bad)";
 
-    const last = (st && st.last_ts) ? st.last_ts : ((ss && ss.last_edge_status) ? ss.last_edge_status : "—");
+    const last = (st && st.last_ts) ? st.last_ts : ((ss && ss.last_edge_status) ? ss.last_edge_status : "?");
     $("k_age").innerText = (age!=null) ? (`Ultimo dato: ${last} | age ${age}s`) : "Nessun dato ancora";
 
+    // KPI: prefer WS fields; i fallback da serie li aggiorna fetchSeries()
     if(st && st.fields){
-      $("k_pac").innerText = fmt(st.fields.p_ac_w ?? null, "W");
-      $("k_poa").innerText = fmt(st.fields.poa_wm2 ?? null, "W/m²");
+      const pac = st.fields.p_ac_w;
+      const poa = st.fields.poa_wm2;
+      $("k_pac").innerText = fmt(pac ?? null, "W");
+      $("k_poa").innerText = fmt(poa ?? null, "W/m²");
     }
 
-    $("k_health").innerText = ok ? "OK" : ((age!=null) ? "STALE" : "—");
+    $("k_health").innerText = ok ? "OK" : ((age!=null) ? "STALE" : "?");
     $("k_health").style.color = ok ? "var(--ok)" : ((age!=null) ? "var(--warn)" : "var(--muted)");
+}
+
+  function setSelected(siteId){
+
+    selected = siteId;
+    $("title").innerText = `Impianto ${siteId}`;
+    $("subtitle").innerText = `Telemetria & KPI live per ${siteId}.`;
+    renderSites();
+    refreshSelectedKpi();
+    fetchSeries();
+  }
+
+
+  function renderPVView(siteId){
+    $("title").innerText = `Impianto ${siteId}`;
+    $("subtitle").innerText = `Telemetria & KPI live per ${siteId}.`;
+    refreshSelectedKpi();
+    fetchSeries();
+  }
+
+  async function renderDeviceView(siteId, deviceId, deviceName){
+    $("title").innerText = `${deviceName || deviceId}`;
+    $("subtitle").innerText = `Dettaglio inverter ${deviceId} (${siteId})`;
+
+    // best-effort: se endpoint non esiste, non rompere
+    try{
+      const r = await fetch(`/api/site/${encodeURIComponent(siteId)}/device/${encodeURIComponent(deviceId)}/latest`, { cache:"no-store" });
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+
+      // Riutilizziamo le 4 card senza cambiare layout (no regressioni)
+      // Stato: ONLINE se ok, altrimenti OFFLINE/—
+      const ok = !!j.ok;
+      $("k_status").innerText = (j.ok == null) ? "—" : (ok ? "ONLINE" : "OFFLINE");
+      $("k_status").style.color = (j.ok == null) ? "var(--text)" : (ok ? "var(--ok)" : "var(--bad)");
+
+      // Mostriamo "ultimo dato" se c’è
+      $("k_age").innerText = j.last_ts ? (`Ultimo dato: ${j.last_ts} | age ${j.age_s ?? "?"}s`) : "Nessun dato ancora";
+
+      // KPI inverter (se ci sono)
+      $("k_pac").innerText = fmt(j.fields?.p_ac_w ?? null, "W");
+      // mettiamo vdc su POA card per ora (poi aggiungiamo card dedicate)
+      $("k_poa").innerText = fmt(j.fields?.v_dc_v ?? null, "V");
+      $("k_health").innerText = (j.ok == null) ? "—" : (ok ? "OK" : "STALE");
+      $("k_health").style.color = (j.ok == null) ? "var(--muted)" : (ok ? "var(--ok)" : "var(--warn)");
+
+      // Nota: grafico inverter lo facciamo step dopo (serie per device)
+      try{ setNoData(true, "Grafico inverter: step successivo"); }catch(e){}
+    }catch(e){
+      // fallback: non esiste latest -> non crash
+      $("k_status").innerText = "—";
+      $("k_age").innerText = "—";
+      $("k_pac").innerText = "—";
+      $("k_poa").innerText = "—";
+      $("k_health").innerText = "—";
+      $("k_status").style.color = "var(--text)";
+      $("k_health").style.color = "var(--muted)";
+      try{ setNoData(true, "Dettagli inverter non disponibili (endpoint mancante)"); }catch(e2){}
+    }
+  }
+
+
+  function showPVView(){
+    viewMode = "pv";
+    try{
+      $("chart1").style.display = "";
+      $("invPanel").style.display = "none";
+      chart.resize();
+    }catch(e){}
+  }
+
+  function showInvView(){
+    viewMode = "inv";
+    try{
+      $("chart1").style.display = "none";
+      $("invPanel").style.display = "";
+    }catch(e){}
+  }
+
+  function fmtNum(v){
+    if(v === null || v === undefined) return "—";
+    if(typeof v !== "number") return String(v);
+    return v.toFixed(0);
+  }
+
+  async function fetchInverterLatest(siteId, deviceId){
+    if(!deviceId){
+      pushEvent("INV", "deviceId vuoto: salto richiesta latest", "warn");
+      return;
+    }
+    try{
+      const r = await fetch(`/api/site/${encodeURIComponent(siteId)}/devices/${encodeURIComponent(deviceId)}/latest`, { cache:"no-store" });
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+
+      $("inv_pac").innerText = fmt(j.p_ac_w ?? null, "W");
+      $("inv_pac_ts").innerText = j.last_ts ? ("ts " + j.last_ts) : "—";
+      $("inv_vdc").innerText = fmtNum(j.v_dc ?? null);
+      $("inv_gridv").innerText = fmtNum(j.grid_v ?? null);
+      $("inv_freq").innerText = fmtNum(j.freq_hz ?? null);
+      $("inv_raw").textContent = JSON.stringify(j, null, 2);
+    }catch(e){
+      pushEvent("INV", `latest fallito: ${e.message}`, "warn");
+      $("inv_raw").textContent = "(errore: " + e.message + ")";
+    }
+  }
+
+  async function fetchDeviceStatus(siteId){
+    try{
+      const r = await fetch(`/api/site/${encodeURIComponent(siteId)}/devices/status`, { cache:"no-store" });
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      deviceStatusBySite[String(siteId)] = j;
+    }catch(e){
+      deviceStatusBySite[String(siteId)] = { site_id:String(siteId), total:0, online:0, devices:[] };
+      pushEvent("Devices", `devices/status fallito per ${siteId}: ${e.message}`, "warn");
+    }
+  }
+
+
+  // ---------- Inverter UI (gauges + trend) ----------
+  let invCharts = { pac:null, vdc:null, gridv:null, hz:null, trend:null };
+
+  function invGaugeOption(title, value, unit, maxVal){
+    const v = (value==null || !isFinite(value)) ? 0 : value;
+    return {
+      series: [{
+        type: 'gauge',
+        startAngle: 210,
+        endAngle: -30,
+        min: 0,
+        max: maxVal || 100,
+        splitNumber: 5,
+        progress: { show: true, width: 10 },
+        axisLine: { lineStyle: { width: 10 } },
+        axisTick: { show: false },
+        splitLine: { length: 10 },
+        axisLabel: { color: '#9fb0d0' },
+        pointer: { show: true, width: 4 },
+        title: { show: true, offsetCenter: [0, "70%"], color:'#9fb0d0', fontSize: 12 },
+        detail: {
+          valueAnimation: true,
+          formatter: function(val){ return (isFinite(val)? Math.round(val):0) + (unit?(" "+unit):""); },
+          color: '#e8eefc',
+          fontSize: 16,
+          offsetCenter: [0, "35%"]
+        },
+        data: [{ value: v, name: title }]
+      }]
+    };
+  }
+
+  function ensureInvCharts(){
+    try{
+      if(!invCharts.pac) invCharts.pac = echarts.init($("invGaugePac"));
+      if(!invCharts.vdc) invCharts.vdc = echarts.init($("invGaugeVdc"));
+      if(!invCharts.gridv) invCharts.gridv = echarts.init($("invGaugeGridV"));
+      if(!invCharts.hz) invCharts.hz = echarts.init($("invGaugeHz"));
+      if(!invCharts.trend) invCharts.trend = echarts.init($("invTrend"));
+    }catch(e){}
+  }
+
+  function showPVView(){
+    viewMode = "pv";
+    try{
+      $("chart1").style.display = "";
+      $("invPanel").style.display = "none";
+      chart.resize();
+    }catch(e){}
+  }
+
+  function showInvView(){
+    viewMode = "inv";
+    try{
+      $("chart1").style.display = "none";
+      $("invPanel").style.display = "";
+      ensureInvCharts();
+      try{ invCharts.pac && invCharts.pac.resize(); }catch(e){}
+      try{ invCharts.vdc && invCharts.vdc.resize(); }catch(e){}
+      try{ invCharts.gridv && invCharts.gridv.resize(); }catch(e){}
+      try{ invCharts.hz && invCharts.hz.resize(); }catch(e){}
+      try{ invCharts.trend && invCharts.trend.resize(); }catch(e){}
+    }catch(e){}
+  }
+
+  async function fetchDeviceStatus(siteId){
+    try{
+      const r = await fetch(`/api/site/${encodeURIComponent(siteId)}/devices/status`, { cache:"no-store" });
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      deviceStatusBySite[String(siteId)] = j;
+    }catch(e){
+      deviceStatusBySite[String(siteId)] = { site_id:String(siteId), total:0, online:0, devices:[] };
+      pushEvent("Devices", `devices/status fallito per ${siteId}: ${e.message}`, "warn");
+    }
+  }
+
+  function getDeviceOk(siteId, deviceId){
+    const ds = deviceStatusBySite[String(siteId)];
+    if(ds && Array.isArray(ds.devices)){
+      const d = ds.devices.find(x => String(x.id||"") === String(deviceId));
+      if(d && typeof d.ok === "boolean") return d.ok;
+    }
+    return null; // unknown
+  }
+
+  async function fetchInverterLatest(siteId, deviceId){
+    if(!deviceId){
+      pushEvent("INV", "deviceId vuoto: salto latest", "warn");
+      return;
+    }
+    try{
+      const r = await fetch(`/api/site/${encodeURIComponent(siteId)}/devices/${encodeURIComponent(deviceId)}/latest`, { cache:"no-store" });
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+
+      // values (support both flat and nested forms)
+      const pac = (j.p_ac_w ?? j.fields?.p_ac_w ?? null);
+      const vdc = (j.v_dc ?? j.fields?.v_dc_v ?? j.fields?.v_dc ?? null);
+      const gridv = (j.grid_v ?? j.fields?.grid_v ?? j.fields?.v_grid_v ?? null);
+      const hz = (j.freq_hz ?? j.fields?.freq_hz ?? j.fields?.hz ?? null);
+
+      $("inv_pac_ts").innerText = j.last_ts ? ("ts " + j.last_ts) : "—";
+      $("inv_raw").textContent = JSON.stringify(j, null, 2);
+
+      ensureInvCharts();
+      invCharts.pac.setOption(invGaugeOption("AC", (pac||0)/1000.0, "kW", 200), true);
+      invCharts.vdc.setOption(invGaugeOption("Vdc", vdc||0, "V", 1200), true);
+      invCharts.gridv.setOption(invGaugeOption("Grid", gridv||0, "V", 500), true);
+      invCharts.hz.setOption(invGaugeOption("Hz", hz||0, "Hz", 70), true);
+
+    }catch(e){
+      pushEvent("INV", `latest fallito: ${e.message}`, "warn");
+      $("inv_raw").textContent = "(errore: " + e.message + ")";
+    }
+  }
+
+  async function fetchInverterSeries(siteId, deviceId){
+    // best effort: endpoint opzionale (se non c'è, non rompe)
+    try{
+      const minutes = Number(localStorage.getItem("rangeMinutes") || 120);
+      const r = await fetch(`/api/site/${encodeURIComponent(siteId)}/devices/${encodeURIComponent(deviceId)}/series?minutes=${minutes}&every=10s`, { cache:"no-store" });
+      if(r.status === 404) return;
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      const t = (j.t || []).map(x => new Date(x).toLocaleTimeString());
+      const pac = Array.isArray(j.p_ac_w) ? j.p_ac_w : [];
+      ensureInvCharts();
+      invCharts.trend.setOption({
+        grid: { left: 46, right: 16, top: 26, bottom: 34 },
+        tooltip: { trigger:'axis' },
+        xAxis: { type:'category', boundaryGap:false, data: t, axisLabel:{ color:'#9fb0d0'} },
+        yAxis: { type:'value', axisLabel:{ color:'#9fb0d0'} },
+        series: [{ name:'P_AC (W)', type:'line', smooth:true, showSymbol:false, data: pac }]
+      }, { notMerge:true, lazyUpdate:true });
+    }catch(e){
+      pushEvent("INV", `series fallito: ${e.message}`, "warn");
+    }
   }
 
   // ---------- API ----------
@@ -933,7 +1149,7 @@
       if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
       allSites = (j.sites || []).map(x => ({...x, site_id: String(x.site_id)}));
-      if(!selected && allSites.length) setSelectedPV(allSites[0].site_id);
+      if(!selected && allSites.length) setSelected(allSites[0].site_id);
       renderSites();
     }catch(e){
       $("apiStatus").innerText = `API: err`;
@@ -941,6 +1157,7 @@
     }
   }
 
+  
   async function fetchDevices(siteId){
     try{
       const r = await fetch(`/api/site/${encodeURIComponent(siteId)}/devices`, { cache:"no-store" });
@@ -953,45 +1170,8 @@
     }
   }
 
-  async function fetchDeviceStatus(siteId){
-    try{
-      const r = await fetch(`/api/site/${encodeURIComponent(siteId)}/devices/status`, { cache:"no-store" });
-      if(!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json();
-      deviceStatusBySite[String(siteId)] = j;
-      // spesso j.devices è già “arricchito” (ok/host/port)
-      if(Array.isArray(j.devices)) devicesBySite[String(siteId)] = j.devices;
-    }catch(e){
-      deviceStatusBySite[String(siteId)] = { site_id: String(siteId), total: 0, online: 0, devices: [] };
-      pushEvent("Devices", `devices/status fallito per ${siteId}: ${e.message}`, "warn");
-    }
-  }
-
-  async function fetchInverterLatest(siteId, deviceId){
-    try{
-      const r = await fetch(`/api/site/${encodeURIComponent(siteId)}/devices/${encodeURIComponent(deviceId)}/latest`, { cache:"no-store" });
-      if(!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json();
-
-      // Pannello inverter
-      $("inv_pac").innerText = fmt(j.p_ac_w ?? null, "W");
-      $("inv_pac_ts").innerText = j.last_ts ? ("ts " + j.last_ts) : "—";
-      $("inv_vdc").innerText = (j.v_dc == null) ? "—" : Number(j.v_dc).toFixed(0);
-      $("inv_gridv").innerText = (j.grid_v == null) ? "—" : Number(j.grid_v).toFixed(0);
-      $("inv_freq").innerText = (j.freq_hz == null) ? "—" : Number(j.freq_hz).toFixed(1);
-
-      $("inv_raw").textContent = JSON.stringify(j, null, 2);
-    }catch(e){
-      pushEvent("INV", `latest fallito: ${e.message}`, "warn");
-      $("inv_raw").textContent = "(errore: " + e.message + ")";
-    }
-  }
-
   async function fetchSeries(){
     if(!selected) return;
-    // se sono in vista inverter, NON carichiamo serie PV qui (evita rimbalzi UI)
-    if(selectedDevice) return;
-
     try{
       const minutes = rangeMinutes;
       $("rangePill").innerText = `range: ${minutes}m`;
@@ -1004,12 +1184,21 @@
       const pac = Array.isArray(j.p_ac_w) ? j.p_ac_w : [];
       const poa = Array.isArray(j.poa_wm2) ? j.poa_wm2 : [];
 
+      // KPI fallback: usa ultimo punto serie se WS non fornisce fields
+      try{
+        if(pac.length) $("k_pac").innerText = fmt(pac[pac.length-1], "W");
+        if(poa.length) $("k_poa").innerText = fmt(poa[poa.length-1], "W/m²");
+      }catch(e){}
+
+      // niente dati => overlay e stop
       if(!t.length){
         try{ setNoData(true); }catch(e){}
         return;
       }
+
       try{ setNoData(false); }catch(e){}
 
+      // IMPORTANT: merge con baseOption (non usare notMerge:true)
       chart.setOption({
         xAxis: { data: t },
         series: [
@@ -1022,7 +1211,6 @@
       pushEvent("Serie", `Impossibile caricare serie per ${selected}: ${e.message}`, "warn");
     }
   }
-
   // ---------- WS ----------
   function connectWS(){
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -1039,30 +1227,47 @@
       setTimeout(connectWS, 1200);
     };
 
-    let _timer = null;
+    // --- WS update throttling (avoid spamming API) ---
+    let _wsTick = 0;
+    let _wsTimer = null;
+    let _lastSitesFetch = 0;
+
     ws.onmessage = (ev) => {
       try{
         const j = JSON.parse(ev.data);
-        if (j && Array.isArray(j.sites)) sitesStatus = j.sites;
+        if (j && Array.isArray(j.sites)) {
+          sitesStatus = j.sites;
+        }
 
-        if(_timer) return;
-        _timer = setTimeout(() => {
-          _timer = null;
+        const now = Date.now();
+        // throttle: coalesce updates every 1200ms
+        _wsTick++;
+        if(_wsTimer) return;
+        _wsTimer = setTimeout(() => {
+          _wsTimer = null;
+          const n = _wsTick; _wsTick = 0;
+
+          // refresh KPI + series (selected only)
           refreshSelectedKpi();
-          renderSites();
-          if(selected && !selectedDevice) fetchSeries();
-          // se sidebar è espansa, aggiorna “status devices” per i PV espansi (best effort)
-          for(const sid of Object.keys(expandedSites)){
-            if(expandedSites[sid]) fetchDeviceStatus(sid);
-          }
-        }, 800);
+          if(selected) fetchSeries();
 
-      }catch(e){}
+          // refresh /sites at most every 8s (autodiscovery)
+          if(now - _lastSitesFetch > 8000){
+            _lastSitesFetch = now;
+            fetchSites();
+          }
+        }, 1200);
+
+      }catch(e){
+        // ignore
+      }
     };
   }
 
   // ---------- Chart ----------
   const chart = echarts.init($("chart1"));
+
+  // --- chart no-data overlay ---
   function setNoData(show, msg="Nessun dato nel range selezionato"){
     let el = document.getElementById("chartNoData");
     if(!el){
@@ -1078,6 +1283,7 @@
       el.style.fontWeight="700";
       el.style.letterSpacing=".2px";
       el.style.fontSize="13px";
+      // chart container is #chart1 parent (card) so we attach to #chart1 wrapper
       const host = $("chart1").parentElement;
       if(host) host.style.position="relative";
       (host || document.body).appendChild(el);
@@ -1101,24 +1307,251 @@
   };
   chart.setOption(baseOption);
 
-  // ---------- Drawer bindings (lasciamo la tua parte invariata: i bottoni già esistono) ----------
-  // NOTA: qui non tocchiamo la sezione “Config & Tools” per evitare regressioni.
+  // ---------- Drawer (Config) ----------
+  function openDrawer(){
+    $("drawerOverlay").classList.add("show");
+    $("drawerOverlay").setAttribute("aria-hidden","false");
+  }
+  function closeDrawer(){
+    $("drawerOverlay").classList.remove("show");
+    $("drawerOverlay").setAttribute("aria-hidden","true");
+  }
 
-  // ---------- Bindings base ----------
+  $("btnSettings").addEventListener("click", openDrawer);
+  $("btnCloseDrawer").addEventListener("click", closeDrawer);
+  $("btnCloseDrawer2").addEventListener("click", closeDrawer);
+  $("drawerOverlay").addEventListener("click", (e) => { if(e.target === $("drawerOverlay")) closeDrawer(); });
+
+  // ---------- Modbus table helpers (best effort endpoints) ----------
+  function setBoxMsg(id, text, kind="info"){
+    const el = $(id);
+    el.className = "msg" + (kind==="err" ? " err" : kind==="ok" ? " ok" : "");
+    el.textContent = text;
+  }
+
+  function mbRowTemplate(d){
+    const tr = document.createElement("tr");
+
+    const tdEnabled = document.createElement("td");
+    const chk = document.createElement("input");
+    chk.type = "checkbox";
+    chk.checked = !!d.enabled;
+    tdEnabled.appendChild(chk);
+
+    const tdName = document.createElement("td");
+    const inName = document.createElement("input");
+    inName.value = d.name || "";
+    tdName.appendChild(inName);
+
+    const tdHost = document.createElement("td");
+    const inHost = document.createElement("input");
+    inHost.value = d.host || "";
+    tdHost.appendChild(inHost);
+
+    const tdPort = document.createElement("td");
+    const inPort = document.createElement("input");
+    inPort.type = "number";
+    inPort.value = (d.port ?? 502);
+    tdPort.appendChild(inPort);
+
+    const tdUnit = document.createElement("td");
+    const inUnit = document.createElement("input");
+    inUnit.type = "number";
+    inUnit.value = (d.unit_id ?? 1);
+    tdUnit.appendChild(inUnit);
+
+    const tdId = document.createElement("td");
+    const inId = document.createElement("input");
+    inId.value = d.id || "";
+    inId.placeholder = "(auto)";
+    tdId.appendChild(inId);
+
+    const tdActions = document.createElement("td");
+    const del = document.createElement("button");
+    del.className = "btn danger";
+    del.style.padding = "8px 10px";
+    del.textContent = "Remove";
+    del.addEventListener("click", () => {
+      tr.remove();
+      mbUpdateTargets();
+    });
+    tdActions.appendChild(del);
+
+    tr.appendChild(tdEnabled);
+    tr.appendChild(tdName);
+    tr.appendChild(tdHost);
+    tr.appendChild(tdPort);
+    tr.appendChild(tdUnit);
+    tr.appendChild(tdId);
+    tr.appendChild(tdActions);
+
+    tr._getDevice = () => ({
+      id: inId.value.trim(),
+      name: inName.value.trim() || "device",
+      host: inHost.value.trim(),
+      port: Number(inPort.value || 502),
+      unit_id: Number(inUnit.value || 1),
+      enabled: chk.checked
+    });
+
+    [chk, inName, inHost, inPort, inUnit, inId].forEach(el => el.addEventListener("input", mbUpdateTargets));
+    return tr;
+  }
+
+  function mbDevicesFromTable(){
+    const rows = Array.from($("mbTbody").querySelectorAll("tr"));
+    return rows.map(r => r._getDevice()).filter(d => d.host);
+  }
+
+  function mbUpdateTargets(){
+    const devs = mbDevicesFromTable().filter(d => d.enabled);
+    const parts = devs.map(d => `${d.host}:${d.port}:${d.unit_id}`);
+    $("mbTargets").textContent = parts.join(",");
+  }
+
+  function mbAddEmpty(){
+    $("mbTbody").appendChild(mbRowTemplate({ enabled:true, name:"device", host:"", port:502, unit_id:1, id:"" }));
+    mbUpdateTargets();
+  }
+
+  async function mbLoad(siteId){
+    // endpoint “atteso”: /api/site/{siteId}/devices
+    const url = `/api/site/${encodeURIComponent(siteId)}/devices`;
+    try{
+      setBoxMsg("mbMsg", `Loading ${url} …`);
+      const r = await fetch(url, { cache:"no-store" });
+      if(r.status === 404){
+        setBoxMsg("mbMsg", `Endpoint non disponibile: ${url} (404).`, "err");
+        $("mbTbody").innerHTML = "";
+        mbUpdateTargets();
+        return;
+      }
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const cfg = await r.json();
+
+      $("mbTbody").innerHTML = "";
+      (cfg.devices || []).forEach(d => $("mbTbody").appendChild(mbRowTemplate(d)));
+      mbUpdateTargets();
+      setBoxMsg("mbMsg", "Loaded.", "ok");
+    }catch(e){
+      setBoxMsg("mbMsg", `Load error: ${e.message}`, "err");
+    }
+  }
+
+  async function mbSave(siteId){
+    const url = `/api/site/${encodeURIComponent(siteId)}/devices`;
+    try{
+      setBoxMsg("mbMsg", `Saving ${url} …`);
+      const payload = { site_id: siteId, devices: mbDevicesFromTable() };
+      const r = await fetch(url, {
+        method:"PUT",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify(payload)
+      });
+      if(r.status === 404){
+        setBoxMsg("mbMsg", `Endpoint non disponibile: ${url} (404).`, "err");
+        return;
+      }
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const cfg = await r.json();
+
+      $("mbTbody").innerHTML = "";
+      (cfg.devices || []).forEach(d => $("mbTbody").appendChild(mbRowTemplate(d)));
+      mbUpdateTargets();
+      setBoxMsg("mbMsg", "Saved.", "ok");
+    }catch(e){
+      setBoxMsg("mbMsg", `Save error: ${e.message}`, "err");
+    }
+  }
+
+  // ---------- Edge cfg (placeholder) ----------
+  let edgeCfg = null;
+
+  async function edgeLoad(siteId){
+    const url = `/api/edge/${encodeURIComponent(siteId)}`;
+    try{
+      setBoxMsg("edgeMsg", `Loading ${url} …`);
+      const r = await fetch(url, { cache:"no-store" });
+      if(r.status === 404){
+        setBoxMsg("edgeMsg", `Endpoint non disponibile: ${url} (404).`, "err");
+        $("edgeJson").textContent = "(endpoint non disponibile)";
+        edgeCfg = null;
+        return;
+      }
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      edgeCfg = await r.json();
+      $("edgeJson").textContent = JSON.stringify(edgeCfg, null, 2);
+      setBoxMsg("edgeMsg", "Loaded.", "ok");
+    }catch(e){
+      setBoxMsg("edgeMsg", `Load error: ${e.message}`, "err");
+    }
+  }
+
+  async function edgeSave(siteId){
+    const url = `/api/edge/${encodeURIComponent(siteId)}`;
+    try{
+      if(!edgeCfg) throw new Error("No cfg loaded.");
+      setBoxMsg("edgeMsg", `Saving ${url} …`);
+      const r = await fetch(url, {
+        method:"PUT",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify(edgeCfg)
+      });
+      if(r.status === 404){
+        setBoxMsg("edgeMsg", `Endpoint non disponibile: ${url} (404).`, "err");
+        return;
+      }
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      edgeCfg = await r.json();
+      $("edgeJson").textContent = JSON.stringify(edgeCfg, null, 2);
+      setBoxMsg("edgeMsg", "Saved.", "ok");
+    }catch(e){
+      setBoxMsg("edgeMsg", `Save error: ${e.message}`, "err");
+    }
+  }
+
+  // ---------- Bindings ----------
   $("q").addEventListener("input", renderSites);
   window.addEventListener("resize", () => chart.resize());
 
-  $("btnRefresh").addEventListener("click", () => { fetchSites(); if(selected && !selectedDevice) fetchSeries(); });
+  $("btnRefresh").addEventListener("click", () => { fetchSites(); if(selected) fetchSeries(); });
   $("btnClearEvents").addEventListener("click", () => { $("events").innerHTML = ""; });
+
+  $("mbAdd").addEventListener("click", mbAddEmpty);
+
+  $("btnLoadAll").addEventListener("click", () => {
+    const siteId = $("cfgSiteId").value.trim();
+    if(!siteId) return;
+    mbLoad(siteId);
+    edgeLoad(siteId);
+  });
+
+  $("btnSaveAll").addEventListener("click", () => {
+    const siteId = $("cfgSiteId").value.trim();
+    if(!siteId) return;
+    mbSave(siteId);
+    edgeSave(siteId);
+  });
+
+  $("edgeLoad").addEventListener("click", () => {
+    const siteId = $("cfgSiteId").value.trim();
+    if(!siteId) return;
+    edgeLoad(siteId);
+  });
+
+  $("edgeSave").addEventListener("click", () => {
+    const siteId = $("cfgSiteId").value.trim();
+    if(!siteId) return;
+    edgeSave(siteId);
+  });
 
   // ---------- Boot ----------
   $("hostLabel").innerText = location.host;
-  pushEvent("Boot", "Dashboard avviata. In attesa di telemetria.", "info");
 
+  pushEvent("Boot", "Dashboard avviata. In attesa di telemetria.", "info");
   fetchSites();
   connectWS();
 </script>
-
 
 </body>
 </html>
