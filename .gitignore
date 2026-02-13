@@ -34,3 +34,17 @@ cloud/mosquitto/data/
 
 *.bak
 
+# local env
+**/.env
+
+# temp patch scripts / backups
+**/tmp_*.py
+**/patch_*.py
+**/*.bak*
+**/*.before*
+**/*.pre*
+**/*.backup*
+**/*.bak
+
+# local scratch json
+**/tmp_*.json
