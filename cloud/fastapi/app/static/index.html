@@ -521,6 +521,41 @@
           </div>
         </div>
         <div id="chart1" class="chartBox"></div>
+        <div id="invPanel" class="chartBox" style="display:none; padding:10px 6px 0;">
+          <div style="display:grid; grid-template-columns: repeat(4, minmax(160px,1fr)); gap:14px;">
+            <div class="card" style="min-height:140px;">
+              <div class="label">Potenza AC</div>
+              <div class="value" id="inv_pac">—</div>
+              <div class="hint mono" id="inv_pac_ts">—</div>
+            </div>
+            <div class="card" style="min-height:140px;">
+              <div class="label">Vdc</div>
+              <div class="value" id="inv_vdc">—</div>
+              <div class="hint">V</div>
+            </div>
+            <div class="card" style="min-height:140px;">
+              <div class="label">Grid V</div>
+              <div class="value" id="inv_gridv">—</div>
+              <div class="hint">V</div>
+            </div>
+            <div class="card" style="min-height:140px;">
+              <div class="label">Freq</div>
+              <div class="value" id="inv_freq">—</div>
+              <div class="hint">Hz</div>
+            </div>
+          </div>
+          <div style="margin-top:14px;">
+            <div class="panel" style="min-height:240px;">
+              <div class="panelHeader">
+                <div>
+                  <div class="h">Dettagli inverter</div>
+                  <div class="s">Valori live</div>
+                </div>
+              </div>
+              <div class="msg mono" id="inv_raw" style="white-space:pre-wrap; min-height:140px;">(raw)</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="panel">
@@ -721,7 +756,7 @@
   }
 
   function renderSites(){
-    const q = ($("q").value || "").trim().toLowerCase();
+    const q = $("q").value.trim().toLowerCase();
     const el = $("siteList");
     el.innerHTML = "";
 
@@ -732,24 +767,39 @@
     if(list.length === 0){
       el.innerHTML = `<div style="color:#9fb0d0;font-size:12px;padding:10px;line-height:1.35;">
         Nessun impianto ancora.<br>
-        Se l’edge è online ma non compare, controlla la telemetria/ingest.
+        Se l’edge è online ma non compare, significa che non sta scrivendo punti su Influx (o tag/measurement non compatibili).
       </div>`;
       return;
     }
 
     for(const s of list){
       const sid = String(s.site_id);
-      const pvOk = pvOkFromStatus(sid);
-      const age = pvAge(sid);
-      const expanded = !!expandedSites[sid];
-      const isActivePV = (String(selected) === sid) && !selectedDevice;
+      const st = (sitesStatus || []).find(x => String(x.site_id) === sid);
 
-      const ds = deviceStatusBySite[sid];
-      const cnt = ds ? `${ds.online}/${ds.total}` : "";
+      const pvOk = (st && ("ok" in st)) ? !!st.ok : !!s.online;
+
+      const age = (st && (st.age_s != null)) ? st.age_s : (() => {
+        try{
+          if(!s.last_edge_status) return null;
+          const t = new Date(s.last_edge_status).getTime();
+          if(!isFinite(t)) return null;
+          return Math.max(0, Math.round((Date.now()-t)/1000));
+        }catch(e){ return null; }
+      })();
+
+      const activePV = (sid === String(selected)) && !selectedDevice;
 
       const row = document.createElement("div");
-      row.className = "site" + (isActivePV ? " active" : "");
-      row.onclick = () => setSelectedPV(sid);
+      row.className = "site" + (activePV ? " active" : "");
+      row.onclick = () => {
+        selectedDevice = null;
+        setSelected(sid);
+        renderPVView(sid);
+      };
+
+      const expanded = !!expandedSites[sid];
+      const ds = deviceStatusBySite[sid];
+      const ratio = ds ? (` | ${ds.online}/${ds.total}`) : "";
 
       row.innerHTML = `
         <div class="siteRow">
@@ -761,39 +811,65 @@
             </div>
           </div>
           <div class="siteRight">
-            <button class="toggleBtn" data-sid="${sid}" title="Espandi">${expanded ? "▾" : "▸"}</button>
-            <div class="badge">${pvOk ? "ONLINE" : "OFFLINE"}${cnt ? (" | " + cnt) : ""}</div>
+            <button class="toggleBtn" data-kind="toggle" title="Espandi">${expanded ? "▾" : "▸"}</button>
+            <div class="badge">${pvOk ? "ONLINE" : "OFFLINE"}${ratio}</div>
           </div>
         </div>
       `;
 
-      const tgl = row.querySelector(".toggleBtn");
-      tgl.onclick = (ev) => { ev.stopPropagation(); toggleSite(sid); };
+      const tgl = row.querySelector('[data-kind="toggle"]');
+      if(tgl){
+        tgl.onclick = async (ev) => {
+          ev.stopPropagation();
+          expandedSites[sid] = !expandedSites[sid];
+
+          if(expandedSites[sid]){
+            // carico status + devices SOLO QUI (async) e poi rerender
+            await fetchDeviceStatus(sid);
+            if(!devicesBySite[sid]) await fetchDevices(sid);
+          }
+          renderSites();
+        };
+      }
 
       el.appendChild(row);
 
-      if(expanded){
+      if(expandedSites[sid]){
         const devs = (devicesBySite[sid] || []);
         for(const d of devs){
           const did = String(d.id || "");
           const nm = d.name || did || "device";
-          const invOk = ("ok" in d) ? d.ok : null;
+          const invOk = (d.ok === true) ? true : (d.ok === false ? false : null);
+          const dotCls = (invOk === true) ? "ok" : (invOk === false ? "bad" : "unk");
 
           const child = document.createElement("div");
-          child.className = "site dev" + ((selectedDevice && selectedDevice.site_id===sid && selectedDevice.id===did) ? " active" : "");
-          child.onclick = () => setSelectedDevice(sid, did, nm);
+          child.className = "site dev";
+
+          const activeDev = selectedDevice && selectedDevice.site_id===sid && selectedDevice.id===did;
+          if(activeDev) child.classList.add("active");
+
+          child.onclick = () => {
+            selected = sid;
+            selectedDevice = { site_id: sid, id: did };
+            renderSites();
+
+            showInvView();
+            $("title").innerText = `${nm}`;
+            $("subtitle").innerText = `Dettaglio inverter ${did} (${sid})`;
+            fetchInverterLatest(sid, did);
+          };
 
           child.innerHTML = `
             <div class="siteRow">
               <div class="left">
-                <div class="dot ${invDotClass(invOk)}"></div>
+                <div class="dot ${dotCls}"></div>
                 <div>
                   <div class="name">${nm}</div>
                   <div class="meta">${d.host || ""}:${d.port || ""} unit ${d.unit_id || ""}</div>
                 </div>
               </div>
               <div class="siteRight">
-                <div class="badge">${invOk===true ? "ONLINE" : invOk===false ? "OFFLINE" : "UNKNOWN"}</div>
+                <div class="badge">INV</div>
               </div>
             </div>
           `;
