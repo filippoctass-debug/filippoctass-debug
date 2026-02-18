@@ -26,8 +26,10 @@ from(bucket: "{bucket}")
   |> filter(fn: (r) => r._measurement == "pv_telemetry_v2")
   |> filter(fn: (r) => r.site_id == "{site_id}")
   |> filter(fn: (r) => r._field == "p_ac_w" or r._field == "poa_wm2")
-  |> aggregateWindow(every: {every}, fn: mean, createEmpty: false)
-  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+    |> aggregateWindow(every: {every}, fn: mean, createEmpty: false)
+  |> group(columns: ["_time","_field"])
+  |> sum(column: "_value")
+  |> sort(columns: ["_time"])  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
   |> keep(columns: ["_time", "p_ac_w", "poa_wm2"])
 """.strip()
 
@@ -63,5 +65,6 @@ def _map_device_fallback(site_id: str, device_id: str):
     except Exception:
         pass
     return None
+
 
 

@@ -29,6 +29,15 @@
           "unit_id": 3,
           "enabled": true,
           "model": "sunspec"
+        },
+        {
+          "id": "inv_4",
+          "name": "KACO_4",
+          "host": "192.168.2.108",
+          "port": 5020,
+          "unit_id": 4,
+          "enabled": true,
+          "model": "sunspec"
         }
       ]
     },

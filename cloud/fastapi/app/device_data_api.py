@@ -152,3 +152,23 @@ from(bucket: "{INFLUX_BUCKET}")
 
 
 
+
+import re
+
+def normalize_device_id(device_id: str) -> str:
+    if device_id is None:
+        return device_id
+
+    did = str(device_id).strip()
+
+    # già canonical (Influx)
+    if did.lower().startswith("dev"):
+        return did
+
+    # inv_1 / inv-1 / inverter1 / inverter_1 -> dev1
+    m = re.match(r"^(?:inv|inverter)[_-]?(\d+)$", did, re.IGNORECASE)
+    if m:
+        return f"dev{int(m.group(1))}"
+
+    return did
+

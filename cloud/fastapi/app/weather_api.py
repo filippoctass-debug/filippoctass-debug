@@ -133,7 +133,14 @@ async def site_weather(
 
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(url, params=params)
+    try:
         r.raise_for_status()
+    except Exception as e:
+        # open-meteo può rate-limitare (429): non deve rompere la dashboard
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        if status == 429:
+            return {"ok": False, "rate_limited": True, "status": 429, "data": None}
+        raise
         j = r.json()
 
     # Stima produzione oraria dai valori di shortwave_radiation (W/m2)
@@ -168,3 +175,4 @@ async def site_weather(
             "daily_kwh": daily_kwh,
         },
     }
+

@@ -1,4 +1,4 @@
-﻿import json
+import json
 import os
 import threading
 import time
@@ -206,8 +206,13 @@ def _run():
     insecure = _env_bool("MQTT_TLS_INSECURE", False)
 
     _log(f"MQTT cfg host={host} port={port} user={user} ca={ca} insecure={insecure}")
+    client_id = (os.getenv("MQTT_CLIENT_ID")
+                 or os.getenv("MQTT_CLIENTID")
+                 or os.getenv("CLIENT_ID")
+                 or "cr_ingest_api")
+    _log(f"MQTT client_id={client_id}")
+    client = mqtt.Client(client_id=client_id, protocol=mqtt.MQTTv5)
 
-    client = mqtt.Client(protocol=mqtt.MQTTv5)
     client.username_pw_set(user, pw)
 
     if insecure:
@@ -239,4 +244,3 @@ def start_ingest():
         return
     _thread = threading.Thread(target=_run, daemon=True)
     _thread.start()
-
