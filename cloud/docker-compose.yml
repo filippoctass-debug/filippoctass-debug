@@ -36,5 +36,6 @@
       - ./fastapi/app:/app/app
       - ./mosquitto/certs:/mosquitto/certs:ro
 
-
+    environment:
+      INFLUX_TAG_DEVICE_ID: "device"
 

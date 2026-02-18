@@ -1,4 +1,45 @@
-﻿{
+{
   "version": 1,
-  "sites": {}
+  "sites": {
+    "PV_001": {
+      "devices": [
+        {
+          "id": "inv_1",
+          "name": "KACO_1",
+          "host": "192.168.2.108",
+          "port": 5020,
+          "unit_id": 1,
+          "enabled": true,
+          "model": "sunspec"
+        },
+        {
+          "id": "inv_2",
+          "name": "KACO_2",
+          "host": "192.168.2.108",
+          "port": 5020,
+          "unit_id": 2,
+          "enabled": true,
+          "model": "sunspec"
+        },
+        {
+          "id": "inv_3",
+          "name": "KACO_3",
+          "host": "192.168.2.108",
+          "port": 5020,
+          "unit_id": 3,
+          "enabled": true,
+          "model": "sunspec"
+        }
+      ]
+    },
+    "PV_002": {
+      "devices": []
+    },
+    "PV_003": {
+      "devices": []
+    },
+    "PV_002_OSLO": {
+      "devices": []
+    }
+  }
 }

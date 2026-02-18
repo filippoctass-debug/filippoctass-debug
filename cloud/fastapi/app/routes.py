@@ -1,31 +1,28 @@
-﻿from fastapi import APIRouter, HTTPException, Query
-from app.sites import list_sites, delete_site
+﻿from fastapi import APIRouter
+
+from app.devices_api import router as devices_router
+
+# OPTIONAL routers (safe import)
+try:
+    from app.device_data_api import router as device_data_router
+except Exception:
+    device_data_router = None
+
+try:
+    from app.weather_api import router as weather_router
+except Exception:
+    weather_router = None
+
 
 router = APIRouter()
 
-@router.get("/sites")
-def sites(
-    lookback_days: int = Query(7, ge=1, le=365),
-    online_within_seconds: int = Query(120, ge=5, le=3600),
-):
-    return {"sites": list_sites(lookback_days=lookback_days, online_within_seconds=online_within_seconds)}
-
-@router.get("/site_ids")
-def site_ids(
-    lookback_days: int = Query(30, ge=1, le=365),
-):
-    items = list_sites(lookback_days=lookback_days, online_within_seconds=999999)
-    return {"sites": [str(x.get("site_id")) for x in items if x.get("site_id")]}
-
-@router.delete("/sites/{site_id}")
-def sites_delete(site_id: str):
-    ok = delete_site(site_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="site_id not found")
-    return {"ok": True, "deleted": site_id}
-
-
-# devices config (PV -> devices)
-from app.devices_api import router as devices_router
+# existing
 router.include_router(devices_router)
 
+# new: inverter data (Influx)
+if device_data_router is not None:
+    router.include_router(device_data_router, prefix="/api")
+
+# new: weather (Open-Meteo)
+if weather_router is not None:
+    router.include_router(weather_router, prefix="/api")

@@ -1,4 +1,4 @@
-import os
+﻿import os
 from fastapi import APIRouter
 from app.influx import get_influx_client
 
@@ -45,3 +45,23 @@ from(bucket: "{bucket}")
             out["poa_wm2"].append(record.values.get("poa_wm2"))
 
     return out
+
+
+def _map_device_fallback(site_id: str, device_id: str):
+    """
+    Se non esistono dati per device_id,
+    prova mapping automatico inv_N -> devN
+    basato sull'ordine nel config site.
+    """
+    try:
+        from app.storage.edge_config import get_site_config
+        cfg = get_site_config(site_id)
+        devices = cfg.get("devices", [])
+        for i,d in enumerate(devices):
+            if str(d.get("id")) == device_id:
+                return f"dev{i+1}"
+    except Exception:
+        pass
+    return None
+
+
