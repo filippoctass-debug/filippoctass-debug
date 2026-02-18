@@ -12,11 +12,15 @@
     image: containrrr/watchtower:1.7.1
     restart: always
     volumes:
+      - ./certs:/app/certs:ro
       - /var/run/docker.sock:/var/run/docker.sock
     command: >
       --label-enable
       --interval 30
       --cleanup
+
+
+
 
 
 
