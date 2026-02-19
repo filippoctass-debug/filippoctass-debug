@@ -1,0 +1,23 @@
+{
+  "PV_001": {
+    "lat": 59.0,
+    "lon": 10.0,
+    "pv_kwp": 10.0,
+    "timezone": "UTC",
+    "pr": 0.85
+  },
+  "PV_002": {
+    "lat": 59.0,
+    "lon": 10.0,
+    "pv_kwp": 10.0,
+    "timezone": "UTC",
+    "pr": 0.85
+  },
+  "PV_002_OSLO": {
+    "lat": 59.0,
+    "lon": 10.0,
+    "pv_kwp": 10.0,
+    "timezone": "UTC",
+    "pr": 0.85
+  }
+}

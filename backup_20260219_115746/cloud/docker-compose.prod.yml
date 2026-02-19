@@ -3,7 +3,6 @@
     image: eclipse-mosquitto:2.0
     restart: unless-stopped
     ports:
-      - "8883:8883"
       - "18883:8883"
     volumes:
       - ./mosquitto/config:/mosquitto/config
@@ -15,7 +14,7 @@
     image: influxdb:2.7
     restart: unless-stopped
     ports:
-      - "127.0.0.1:18086:8086"
+      - "127.0.0.1:8086:8086"
     env_file:
       - .env
     volumes:
@@ -23,8 +22,7 @@
       - ./influxdb/config:/etc/influxdb2
 
   control-room-api:
-    build: ./fastapi
-    image: cloud-control-room-api:dev
+    image: ghcr.io/filippoctass-debug/control-room-api:latest
     restart: unless-stopped
     env_file:
       - .env
@@ -34,9 +32,18 @@
     ports:
       - "8000:8000"
     volumes:
-      - ./fastapi/app:/app/app
       - ./mosquitto/certs:/mosquitto/certs:ro
+      - ./fastapi/app/mqtt_ingest.py:/app/app/mqtt_ingest.py:ro
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
 
+  watchtower-cloud:
+    image: containrrr/watchtower:1.7.1
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      INFLUX_TAG_DEVICE_ID: "device"
-
+      - DOCKER_API_VERSION=1.44
+      - REPO_USER=${GHCR_USER}
+      - REPO_PASS=${GHCR_TOKEN}
+    command: --interval 60 --cleanup --label-enable --debug

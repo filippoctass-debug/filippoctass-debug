@@ -1,0 +1,5 @@
+from(bucket: "cci")
+  |> range(start: -30m)
+  |> filter(fn: (r) => r._measurement == "pv_telemetry")
+  |> filter(fn: (r) => r.site_id == "PV_001")
+  |> limit(n: 10)

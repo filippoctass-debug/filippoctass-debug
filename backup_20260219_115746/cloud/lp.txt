@@ -1,0 +1,1 @@
+pv_telemetry_v2,site_id=PV_001,device=manual,modbus_host=x,modbus_port=0,unit_id=0 p_ac_w=173

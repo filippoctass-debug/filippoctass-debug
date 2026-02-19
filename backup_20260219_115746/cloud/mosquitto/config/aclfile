@@ -1,0 +1,16 @@
+user edge_pv_001
+topic readwrite pv/#
+
+user cr_ingest
+topic read pv/+/telemetry
+topic read pv/+/status
+topic read pv/+/modbus_status
+topic read pv/+/modbus_error
+topic readwrite pv/#
+user edge_pv_002
+topic readwrite pv/PV_001/#
+topic readwrite pv/PV_002/#
+
+
+user edge_pv_002
+topic readwrite pv/#

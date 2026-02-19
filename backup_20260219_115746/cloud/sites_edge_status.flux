@@ -1,0 +1,5 @@
+from(bucket:"cci")
+  |> range(start:-2h)
+  |> filter(fn:(r) => r._measurement == "edge_status")
+  |> keep(columns:["site_id"])
+  |> distinct(column:"site_id")

@@ -1,0 +1,22 @@
+﻿services:
+  edge-driver:
+    image: ghcr.io/filippoctass-debug/edge-driver:latest
+    container_name: edge-driver
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./certs:/certs:ro
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower-edge:
+    image: containrrr/watchtower:1.7.1
+    container_name: watchtower-edge
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 60 --cleanup --label-enable --debug
+    env_file:
+      - .env.watchtower

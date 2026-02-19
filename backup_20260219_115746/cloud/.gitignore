@@ -1,0 +1,24 @@
+﻿# env
+.env
+*.env
+
+# certs/keys
+*.key
+*.crt
+*.pem
+cloud/mosquitto/certs/
+cloud/ca*.crt
+cloud/*.key
+cloud/*.crt
+
+# sqlite runtime
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+edge/data/
+
+# local backups / temp
+cloud/fastapi/app/static/index.html.bak*
+cloud/fastapi/app/static/index.html.safe_*
+cloud/*.json
+cloud/lp.txt

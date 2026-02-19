@@ -1,0 +1,7 @@
+{
+  "auths": {
+    "ghcr.io": {
+      "auth": "ZmlsaXBwb2N0YXNzLWRlYnVnOmdocF90ekRHTVpVTExoZzNVQ0NlRk1WcmNhSEUwNFZwdTk0TnZpdnU="
+    }
+  }
+}

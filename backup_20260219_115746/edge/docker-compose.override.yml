@@ -1,0 +1,6 @@
+﻿services:
+  edge-driver:
+    volumes:
+      - .\edge_driver.py:/app/edge_driver.py:ro
+      - .\certs:/certs:ro
+    command: ["python","/app/edge_driver.py"]

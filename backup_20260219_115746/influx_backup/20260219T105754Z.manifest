@@ -1,0 +1,224 @@
+{
+  "manifestVersion": 2,
+  "kv": {
+    "fileName": "20260219T105754Z.bolt.gz",
+    "size": 4245,
+    "compression": 1
+  },
+  "sql": {
+    "fileName": "20260219T105754Z.sqlite.gz",
+    "size": 3447,
+    "compression": 1
+  },
+  "buckets": [
+    {
+      "organizationID": "2d27058eb1c3bd14",
+      "organizationName": "pv",
+      "bucketID": "3cf150af98f87b78",
+      "bucketName": "_monitoring",
+      "description": "System bucket for monitoring logs",
+      "defaultRetentionPolicy": "autogen",
+      "retentionPolicies": [
+        {
+          "name": "autogen",
+          "replicaN": 1,
+          "duration": 604800000000000,
+          "shardGroupDuration": 86400000000000,
+          "shardGroups": [
+            {
+              "id": 2,
+              "startTime": "2026-02-04T00:00:00Z",
+              "endTime": "2026-02-05T00:00:00Z",
+              "deletedAt": "2026-02-12T00:07:13.793769922Z",
+              "shards": []
+            },
+            {
+              "id": 3,
+              "startTime": "2026-02-05T00:00:00Z",
+              "endTime": "2026-02-06T00:00:00Z",
+              "deletedAt": "2026-02-13T00:07:59.335950779Z",
+              "shards": []
+            },
+            {
+              "id": 4,
+              "startTime": "2026-02-06T00:00:00Z",
+              "endTime": "2026-02-07T00:00:00Z",
+              "deletedAt": "2026-02-14T00:05:10.771692292Z",
+              "shards": []
+            },
+            {
+              "id": 5,
+              "startTime": "2026-02-07T00:00:00Z",
+              "endTime": "2026-02-08T00:00:00Z",
+              "deletedAt": "2026-02-15T00:05:05.727997715Z",
+              "shards": []
+            },
+            {
+              "id": 6,
+              "startTime": "2026-02-08T00:00:00Z",
+              "endTime": "2026-02-09T00:00:00Z",
+              "deletedAt": "2026-02-16T00:05:00.449601207Z",
+              "shards": []
+            },
+            {
+              "id": 7,
+              "startTime": "2026-02-09T00:00:00Z",
+              "endTime": "2026-02-10T00:00:00Z",
+              "deletedAt": "2026-02-17T00:04:54.982502238Z",
+              "shards": []
+            },
+            {
+              "id": 9,
+              "startTime": "2026-02-10T00:00:00Z",
+              "endTime": "2026-02-11T00:00:00Z",
+              "deletedAt": "2026-02-18T00:09:49.156622556Z",
+              "shards": []
+            },
+            {
+              "id": 10,
+              "startTime": "2026-02-11T00:00:00Z",
+              "endTime": "2026-02-12T00:00:00Z",
+              "deletedAt": "2026-02-19T00:03:58.9171285Z",
+              "shards": []
+            },
+            {
+              "id": 11,
+              "startTime": "2026-02-12T00:00:00Z",
+              "endTime": "2026-02-13T00:00:00Z",
+              "shards": []
+            },
+            {
+              "id": 12,
+              "startTime": "2026-02-13T00:00:00Z",
+              "endTime": "2026-02-14T00:00:00Z",
+              "shards": []
+            },
+            {
+              "id": 13,
+              "startTime": "2026-02-14T00:00:00Z",
+              "endTime": "2026-02-15T00:00:00Z",
+              "shards": []
+            },
+            {
+              "id": 14,
+              "startTime": "2026-02-15T00:00:00Z",
+              "endTime": "2026-02-16T00:00:00Z",
+              "shards": []
+            },
+            {
+              "id": 15,
+              "startTime": "2026-02-16T00:00:00Z",
+              "endTime": "2026-02-17T00:00:00Z",
+              "shards": []
+            },
+            {
+              "id": 17,
+              "startTime": "2026-02-17T00:00:00Z",
+              "endTime": "2026-02-18T00:00:00Z",
+              "shards": [
+                {
+                  "id": 17,
+                  "shardOwners": [],
+                  "fileName": "20260219T105754Z.17.tar.gz",
+                  "size": 216,
+                  "compression": 1
+                }
+              ]
+            },
+            {
+              "id": 18,
+              "startTime": "2026-02-18T00:00:00Z",
+              "endTime": "2026-02-19T00:00:00Z",
+              "shards": []
+            },
+            {
+              "id": 19,
+              "startTime": "2026-02-19T00:00:00Z",
+              "endTime": "2026-02-20T00:00:00Z",
+              "shards": []
+            }
+          ],
+          "subscriptions": []
+        }
+      ]
+    },
+    {
+      "organizationID": "2d27058eb1c3bd14",
+      "organizationName": "pv",
+      "bucketID": "52f49179889b7ffb",
+      "bucketName": "_tasks",
+      "description": "System bucket for task logs",
+      "defaultRetentionPolicy": "autogen",
+      "retentionPolicies": [
+        {
+          "name": "autogen",
+          "replicaN": 1,
+          "duration": 259200000000000,
+          "shardGroupDuration": 86400000000000,
+          "shardGroups": [],
+          "subscriptions": []
+        }
+      ]
+    },
+    {
+      "organizationID": "2d27058eb1c3bd14",
+      "organizationName": "pv",
+      "bucketID": "6cd4cf8256284273",
+      "bucketName": "cci",
+      "defaultRetentionPolicy": "autogen",
+      "retentionPolicies": [
+        {
+          "name": "autogen",
+          "replicaN": 1,
+          "duration": 0,
+          "shardGroupDuration": 604800000000000,
+          "shardGroups": [
+            {
+              "id": 1,
+              "startTime": "2026-02-02T00:00:00Z",
+              "endTime": "2026-02-09T00:00:00Z",
+              "shards": [
+                {
+                  "id": 1,
+                  "shardOwners": [],
+                  "fileName": "20260219T105754Z.1.tar.gz",
+                  "size": 64051,
+                  "compression": 1
+                }
+              ]
+            },
+            {
+              "id": 8,
+              "startTime": "2026-02-09T00:00:00Z",
+              "endTime": "2026-02-16T00:00:00Z",
+              "shards": [
+                {
+                  "id": 8,
+                  "shardOwners": [],
+                  "fileName": "20260219T105754Z.8.tar.gz",
+                  "size": 1232397,
+                  "compression": 1
+                }
+              ]
+            },
+            {
+              "id": 16,
+              "startTime": "2026-02-16T00:00:00Z",
+              "endTime": "2026-02-23T00:00:00Z",
+              "shards": [
+                {
+                  "id": 16,
+                  "shardOwners": [],
+                  "fileName": "20260219T105754Z.16.tar.gz",
+                  "size": 1091131,
+                  "compression": 1
+                }
+              ]
+            }
+          ],
+          "subscriptions": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+from(bucket:"cci")
+  |> range(start:-30m)
+  |> filter(fn:(r) => r.site_id == "PV_002")
+  |> filter(fn:(r) => r._measurement == "pv_telemetry_v2")
+  |> filter(fn:(r) => r._field == "p_ac_w" or r._field == "poa_wm2")
+  |> last()
