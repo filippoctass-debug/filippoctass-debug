@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "sites": {
+    "PV_001": {
+      "cfg": {
+        "lat": 40.0,
+        "lon": 10.0,
+        "pv_kwp": 10.0,
+        "timezone": "UTC",
+        "pr": 0.85
+      }
+    }
+  }
+}

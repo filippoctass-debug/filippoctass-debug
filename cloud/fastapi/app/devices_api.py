@@ -9,12 +9,26 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+
+import paho.mqtt.client as mqtt
+
+# Influx (allineato al resto del progetto: pv_aggregate_api.py usa app.influx.get_influx_client)
 from influxdb_client import InfluxDBClient
+from app.influx import get_influx_client
 
+router = APIRouter(tags=["devices"])
 
-router = APIRouter(prefix="/api", tags=["devices"])
+_LOCK = threading.Lock()
+
+# ---- Influx env allineati a pv_aggregate_api.py ----
+INFLUX_ORG = os.getenv("INFLUX_ORG", os.getenv("INFLUXD_INIT_ORG", "pv"))
+INFLUX_BUCKET = os.getenv("INFLUX_BUCKET", os.getenv("INFLUXD_INIT_BUCKET", "cci"))
+MEASUREMENT = os.getenv("INFLUX_MEASUREMENT_TELEMETRY", "pv_telemetry_v2")
+TAG_SITE = os.getenv("INFLUX_TAG_SITE", "site_id")
+TAG_DEVICE = os.getenv("INFLUX_TAG_DEVICE_ID", "device")  # IMPORTANT: default "device"
+
 
 def _bm_dump(m):
     # compat pydantic v1/v2
@@ -24,8 +38,6 @@ def _bm_dump(m):
         return m.dict()
     return dict(m)
 
-
-_LOCK = threading.Lock()
 
 def _storage_path() -> Path:
     # /app/app/storage in container, in repo è cloud/fastapi/app/storage
@@ -58,9 +70,7 @@ def _atomic_write(p: Path, data: Dict[str, Any]) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
 
-    # IMPORTANT:
-    # temp file MUST be created in the SAME directory as target file,
-    # otherwise os.replace() may fail across different filesystems (EXDEV).
+    # IMPORTANT: temp file MUST be created in the SAME directory as target file
     with tempfile.NamedTemporaryFile(
         "w",
         delete=False,
@@ -77,7 +87,7 @@ def _atomic_write(p: Path, data: Dict[str, Any]) -> None:
 
 
 class ModbusDevice(BaseModel):
-    # id interno (stringa) che useremo anche per setpoint target
+    # id interno (stringa) che useremo anche per la dashboard
     id: str = Field(..., min_length=1, max_length=64)
     name: str = Field("inverter", max_length=128)
 
@@ -86,8 +96,6 @@ class ModbusDevice(BaseModel):
     unit_id: int = Field(1, ge=0, le=247)
 
     enabled: bool = True
-
-    # per ora fissiamo Sunspec (poi estendiamo)
     model: str = Field("sunspec", max_length=32)
 
 
@@ -95,11 +103,99 @@ class DevicesPayload(BaseModel):
     site_id: str = Field(..., min_length=1, max_length=64)
     devices: List[ModbusDevice] = Field(default_factory=list)
 
+
 def _normalize_site_id(site_id: str) -> str:
     return str(site_id).strip()
 
-@router.get("/site/{site_id}/devices")
 
+# -----------------------------
+# MQTT publish helpers
+# -----------------------------
+def _env_bool(name: str, default: bool = False) -> bool:
+    v = os.getenv(name)
+    if v is None:
+        return default
+    return v.strip().lower() in ("1", "true", "yes", "y", "on")
+
+
+def _mqtt_publish(topic: str, payload: Dict[str, Any], qos: int = 1, retain: bool = False) -> None:
+    """
+    Publish sincrono (breve) su MQTT.
+    """
+    host = os.getenv("MQTT_HOST", "mosquitto")
+    port = int(os.getenv("MQTT_PORT", "8883"))
+    user = os.getenv("MQTT_USERNAME", "cr_ingest")
+    pw = os.getenv("MQTT_PASSWORD", "")
+    ca = os.getenv("MQTT_TLS_CA", "/mosquitto/certs/ca.crt")
+    insecure = _env_bool("MQTT_TLS_INSECURE", False)
+
+    client = mqtt.Client(protocol=mqtt.MQTTv5)
+    if user:
+        client.username_pw_set(user, pw)
+
+    if insecure:
+        client.tls_set()
+        client.tls_insecure_set(True)
+    else:
+        client.tls_set(ca_certs=ca)
+        client.tls_insecure_set(False)
+
+    client.connect(host, port, keepalive=15)
+    client.loop_start()
+    try:
+        data = json.dumps(payload, ensure_ascii=False)
+        info = client.publish(topic, payload=data, qos=qos, retain=retain)
+        info.wait_for_publish(timeout=5)
+    finally:
+        try:
+            client.loop_stop()
+        except Exception:
+            pass
+        try:
+            client.disconnect()
+        except Exception:
+            pass
+
+
+def _mqtt_publish_cmd_set_targets(site_id: str, devices_out: List[Dict[str, Any]]) -> None:
+    """
+    Pubblica pv/{site}/cmd con targets.
+    """
+    base = os.getenv("MQTT_TOPIC_BASE", "pv")
+    topic = f"{base}/{site_id}/cmd"
+
+    targets = []
+    for d in devices_out or []:
+        if d.get("enabled", True) is False:
+            continue
+        host = (d.get("host") or "").strip()
+        if not host:
+            continue
+        targets.append(
+            {
+                "name": (d.get("name") or d.get("id") or "dev").strip(),
+                "id": (d.get("id") or "").strip(),
+                "host": host,
+                "port": int(d.get("port") or 502),
+                "unit_id": int(d.get("unit_id") or 1),
+                "model": (d.get("model") or "sunspec"),
+            }
+        )
+
+    payload = {
+        "site_id": site_id,
+        "cmd": "set_targets",
+        "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "targets": targets,
+    }
+
+    _mqtt_publish(topic, payload, qos=1, retain=False)
+
+
+# -----------------------------
+# Registry API
+# -----------------------------
+@router.get("/site/{site_id}/devices")
 def get_devices(site_id: str):
     sid = _normalize_site_id(site_id)
     with _LOCK:
@@ -110,8 +206,11 @@ def get_devices(site_id: str):
 
 
 @router.put("/site/{site_id}/devices")
-
 def put_devices(site_id: str, payload: DevicesPayload):
+    """
+    Salva la configurazione devices (slave Modbus) nel registry JSON
+    e pubblica un comando MQTT al PV per applicare i targets.
+    """
     try:
         sid = _normalize_site_id(site_id)
         if _normalize_site_id(payload.site_id) != sid:
@@ -135,23 +234,41 @@ def put_devices(site_id: str, payload: DevicesPayload):
             reg["sites"][sid] = {"devices": devices_out}
             _atomic_write(_storage_path(), reg)
 
-        return {"site_id": sid, "devices": devices_out, "saved": True}
+        # PUBLISH MQTT (in thread to not block API)
+        def _pub():
+            try:
+                _mqtt_publish_cmd_set_targets(sid, devices_out)
+                print(f"[devices_api] MQTT published set_targets site_id={sid} n={len(devices_out)}", flush=True)
+            except Exception as e:
+                print(f"[devices_api] MQTT publish FAILED site_id={sid} err={e}", flush=True)
+
+        threading.Thread(target=_pub, daemon=True).start()
+
+        return {"site_id": sid, "devices": devices_out, "saved": True, "mqtt_cmd_published": True}
 
     except HTTPException:
         raise
     except Exception as e:
-        # stampa traceback in log container
         print("[devices_api] PUT FAILED:", repr(e))
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"put_devices failed: {e}")
 
-def _influx_cfg() -> Dict[str, str]:
-    # allineato a mqtt_ingest (env)
-    url = os.getenv("INFLUX_URL", "http://influxdb:8086")
-    token = os.getenv("INFLUX_TOKEN", "")
-    org = os.getenv("INFLUX_ORG", "")
-    bucket = os.getenv("INFLUX_BUCKET", "")
-    return {"url": url, "token": token, "org": org, "bucket": bucket}
+
+# -----------------------------
+# Status from Influx
+# -----------------------------
+def _json_safe(v):
+    if v is None or isinstance(v, (str, int, float, bool)):
+        return v
+    try:
+        if hasattr(v, "isoformat"):
+            return v.isoformat()
+    except Exception:
+        pass
+    try:
+        return str(v)
+    except Exception:
+        return repr(v)
 
 
 def _records_to_latest_events(records):
@@ -174,8 +291,11 @@ def _records_to_latest_events(records):
 
         key = (meas, str(t), str(sid), str(unit) if unit is not None else "", str(dev) if dev is not None else "")
         if key not in events:
-            tags = {k: _json_safe(v) for k, v in values.items()
-                    if k not in ("_value", "_field", "_time", "_start", "_stop", "result", "table")}
+            tags = {
+                k: _json_safe(v)
+                for k, v in values.items()
+                if k not in ("_value", "_field", "_time", "_start", "_stop", "result", "table")
+            }
             events[key] = {
                 "time": t.isoformat() if hasattr(t, "isoformat") else str(t),
                 "measurement": _json_safe(meas),
@@ -183,12 +303,12 @@ def _records_to_latest_events(records):
                 "fields": {},
             }
 
-        # fields sempre JSON-safe
         events[key]["fields"][str(field)] = _json_safe(val)
 
     out = list(events.values())
     out.sort(key=lambda e: e.get("time", ""), reverse=True)
     return out
+
 
 def _infer_ok_from_event(ev: Dict[str, Any]) -> Optional[bool]:
     """
@@ -202,7 +322,6 @@ def _infer_ok_from_event(ev: Dict[str, Any]) -> Optional[bool]:
     meas = (ev.get("measurement") or "").strip().lower()
     fields = ev.get("fields") or {}
 
-    # se l'ultimo è un errore, è KO
     if meas == "modbus_error":
         return False
 
@@ -215,16 +334,25 @@ def _infer_ok_from_event(ev: Dict[str, Any]) -> Optional[bool]:
         if isinstance(v, str):
             return v.strip().lower() in ("1", "true", "yes", "ok")
 
-    # se è status ma manca modbus_ok, non inventiamo
     return None
 
-@router.get("/site/{site_id}/devices/status")
 
+def _influx_cfg() -> Dict[str, str]:
+    url = os.getenv("INFLUX_URL", "http://influxdb:8086")
+    token = os.getenv("INFLUX_TOKEN", "")
+    org = os.getenv("INFLUX_ORG", "")
+    bucket = os.getenv("INFLUX_BUCKET", "")
+    return {"url": url, "token": token, "org": org, "bucket": bucket}
+
+
+@router.get("/site/{site_id}/devices/status")
 def get_devices_status(site_id: str):
+    """
+    Stato per-device basato su measurement modbus_status/modbus_error (ultimi eventi).
+    """
     try:
         sid = _normalize_site_id(site_id)
 
-        # devices configurati
         with _LOCK:
             reg = _read_registry()
             site = reg["sites"].get(sid) or {"devices": []}
@@ -234,7 +362,7 @@ def get_devices_status(site_id: str):
         if not (cfg["token"] and cfg["org"] and cfg["bucket"]):
             raise HTTPException(
                 status_code=500,
-                detail="Influx env missing (INFLUX_TOKEN/INFLUX_ORG/INFLUX_BUCKET). Cannot compute devices status from modbus_status.",
+                detail="Influx env missing (INFLUX_TOKEN/INFLUX_ORG/INFLUX_BUCKET). Cannot compute devices status.",
             )
 
         flux = f"""
@@ -244,7 +372,7 @@ from(bucket: "{cfg['bucket']}")
 |> filter(fn: (r) => r._measurement == "modbus_status" or r._measurement == "modbus_error")
 |> sort(columns: ["_time"], desc: true)
 |> limit(n: 300)
-"""
+""".strip()
 
         events = []
         try:
@@ -257,7 +385,7 @@ from(bucket: "{cfg['bucket']}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Influx query failed: {e}")
 
-        # indicizza per unit_id tag
+        # indicizza per unit_id
         by_unit: Dict[str, List[Dict[str, Any]]] = {}
         for ev in events:
             tags = ev.get("tags") or {}
@@ -273,17 +401,19 @@ from(bucket: "{cfg['bucket']}")
             evs = by_unit.get(str(unit_id)) if unit_id is not None else None
             ev_pick = (evs[0] if evs else None)
 
-            out_devices.append({
-                "id": d.get("id"),
-                "name": d.get("name"),
-                "host": d.get("host"),
-                "port": d.get("port"),
-                "unit_id": unit_id,
-                "enabled": d.get("enabled", True),
-                "model": d.get("model", "sunspec"),
-                "ok": _infer_ok_from_event(ev_pick) if ev_pick else None,
-                "last_event": ev_pick,
-            })
+            out_devices.append(
+                {
+                    "id": d.get("id"),
+                    "name": d.get("name"),
+                    "host": d.get("host"),
+                    "port": d.get("port"),
+                    "unit_id": unit_id,
+                    "enabled": d.get("enabled", True),
+                    "model": d.get("model", "sunspec"),
+                    "ok": _infer_ok_from_event(ev_pick) if ev_pick else None,
+                    "last_event": ev_pick,
+                }
+            )
 
         return {
             "site_id": sid,
@@ -299,268 +429,196 @@ from(bucket: "{cfg['bucket']}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"get_devices_status failed: {e}")
 
-def _json_safe(v):
-    # riduce qualsiasi tipo a qualcosa serializzabile in JSON
-    if v is None or isinstance(v, (str, int, float, bool)):
-        return v
-    try:
-        # datetime, date, ecc.
-        if hasattr(v, "isoformat"):
-            return v.isoformat()
-    except Exception:
-        pass
-    try:
-        return str(v)
-    except Exception:
-        return repr(v)
+
+# =========================
+# Device telemetry (latest / series) for dashboard inverter view
+# =========================
+def _get_cfg_devices_registry(site_id: str) -> List[Dict[str, Any]]:
+    """
+    Ritorna i devices configurati nel registry, filtrando enabled.
+    """
+    sid = _normalize_site_id(site_id)
+    with _LOCK:
+        reg = _read_registry()
+        site = reg["sites"].get(sid) or {"devices": []}
+        devs = site.get("devices") or []
+    out = []
+    for d in devs:
+        if (d.get("enabled") is None) or bool(d.get("enabled")):
+            out.append(d)
+    return out
 
 
+def _map_request_to_influx_id(site_id: str, requested_device_id: str) -> str:
+    """
+    UI -> valore del tag Influx.
+    Nel tuo caso Influx tagga "device" con il *name* (KACO_1), non con l'id (dev1).
+    Quindi:
+      - se chiedi dev1 => torna KACO_1 (se presente in registry)
+      - se chiedi KACO_1 => torna KACO_1
+    """
+    req = str(requested_device_id or "").strip()
+    if not req:
+        return req
 
+    devs = _get_cfg_devices_registry(site_id)
 
+    # match per id
+    for d in devs:
+        if str(d.get("id", "")).strip() == req:
+            name = str(d.get("name", "") or "").strip()
+            return name or req
 
-### DEVICE LATEST/SERIES API ###
-# NOTE:
-# - Questi endpoint servono la dashboard per la vista inverter.
-# - Query Influx: measurement pv_telemetry_v2 con tag site_id + device_id.
-# - Se i tuoi nomi bucket/org/url/token sono diversi, usa env:
-#   INFLUX_URL, INFLUX_TOKEN, INFLUX_ORG, INFLUX_BUCKET
+    # match per name (se già passi KACO_1)
+    for d in devs:
+        if str(d.get("name", "")).strip() == req:
+            return req
 
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, List
-import os
+    return req
 
-try:
-    from influxdb_client import InfluxDBClient
-except Exception:
-    InfluxDBClient = None  # type: ignore
-
-_INFLUX = {"client": None, "q": None, "org": None, "bucket": None}
-
-def _influx_q():
-    if _INFLUX["q"] is not None:
-        return _INFLUX["q"]
-    if InfluxDBClient is None:
-        raise RuntimeError("influxdb_client non disponibile. Aggiungi 'influxdb-client' in requirements.")
-    url = os.getenv("INFLUX_URL", "http://influxdb:8086")
-    token = os.getenv("INFLUX_TOKEN", "")
-    org = os.getenv("INFLUX_ORG", "")
-    bucket = os.getenv("INFLUX_BUCKET", os.getenv("INFLUXDB_BUCKET", "ctass"))
-    if not token or not org or not bucket:
-        raise RuntimeError("Config Influx mancante: set INFLUX_TOKEN, INFLUX_ORG, INFLUX_BUCKET (e INFLUX_URL se serve).")
-    c = InfluxDBClient(url=url, token=token, org=org, timeout=10_000)
-    _INFLUX["client"] = c
-    _INFLUX["q"] = c.query_api()
-    _INFLUX["org"] = org
-    _INFLUX["bucket"] = bucket
-    return _INFLUX["q"]
 
 def _age_s(ts_iso: Optional[str]) -> Optional[int]:
     if not ts_iso:
         return None
     try:
-        dt = datetime.fromisoformat(ts_iso.replace("Z","+00:00"))
+        dt = datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
         return max(0, int((datetime.now(timezone.utc) - dt).total_seconds()))
     except Exception:
         return None
 
-@router.get("/site/{site_id}/devices/{device_id}/latest")
-def device_latest(site_id: str, device_id: str):
-    q = _influx_q()
-    org = _INFLUX["org"]
-    bucket = _INFLUX["bucket"]
 
-    flux = f'''
-from(bucket: "{bucket}")
-  |> range(start: -24h)
-  |> filter(fn: (r) => r["_measurement"] == "pv_telemetry_v2")
-  |> filter(fn: (r) => r["site_id"] == "{site_id}")
-  |> filter(fn: (r) => r["device_id"] == "{device_id}")
+def _influx_query_api() -> Any:
+    """
+    Usa il client condiviso dell'app (come pv_aggregate_api.py).
+    """
+    c: InfluxDBClient = get_influx_client()
+    return c.query_api()
+
+
+@router.get("/site/{site_id}/device/{device_id}/latest")
+@router.get("/site/{site_id}/devices/{device_id}/latest")  # compat vecchio path
+def device_latest(site_id: str, device_id: str, lookback_s: int = Query(86400, ge=60, le=7 * 86400)):
+    """
+    Latest telemetry point per singolo inverter.
+    """
+    sid = _normalize_site_id(site_id)
+    influx_dev = _map_request_to_influx_id(sid, device_id)
+
+    try:
+        q = _influx_query_api()
+
+        flux = f"""
+from(bucket: "{INFLUX_BUCKET}")
+  |> range(start: -{lookback_s}s)
+  |> filter(fn: (r) => r._measurement == "{MEASUREMENT}")
+  |> filter(fn: (r) => r["{TAG_SITE}"] == "{sid}")
+  |> filter(fn: (r) => r["{TAG_DEVICE}"] == "{influx_dev}")
   |> last()
   |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
-  |> keep(columns: ["_time","p_ac_w","grid_v","freq_hz","i_ac_a","v_dc_v","v_dc","manufacturer","model","serial","source","sunspec_base"])
-'''
-    tables = q.query(query=flux, org=org)
-    row = None
-    for t in tables:
-        for r in t.records:
-            row = r.values
-            break
+""".strip()
 
-    if not row:
+        tables = q.query(flux, org=INFLUX_ORG)
+
+        row = None
+        for t in tables or []:
+            for r in t.records:
+                row = r.values
+                break
+            if row:
+                break
+
+        if not row:
+            return {
+                "site_id": sid,
+                "device_id": device_id,
+                "device_influx": influx_dev,
+                "ok": None,
+                "last_ts": None,
+                "age_s": None,
+                "fields": {},
+                "raw": None,
+            }
+
+        ts = row.get("_time")
+        if hasattr(ts, "isoformat"):
+            ts_iso = ts.isoformat().replace("+00:00", "Z")
+        else:
+            ts_iso = str(ts)
+
+        fields: Dict[str, Any] = {}
+        for k in ("p_ac_w", "grid_v", "freq_hz", "i_ac_a", "v_dc_v", "v_dc"):
+            if k in row and row.get(k) is not None:
+                fields[k] = row.get(k)
+
         return {
-            "site_id": site_id,
+            "site_id": sid,
             "device_id": device_id,
-            "ok": None,
-            "last_ts": None,
-            "age_s": None,
-            "fields": {},
-            "raw": None,
+            "device_influx": influx_dev,
+            "ok": True,
+            "last_ts": ts_iso,
+            "age_s": _age_s(ts_iso),
+            "fields": fields,
+            "raw": row,
         }
 
-    ts = row.get("_time")
-    if hasattr(ts, "isoformat"):
-        ts_iso = ts.isoformat().replace("+00:00","Z")
-    else:
-        ts_iso = str(ts)
+    except Exception as e:
+        print("[devices_api] device_latest FAILED:", repr(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"device_latest failed: {e}")
 
-    # Estrai fields noti + fallback generico numerico
-    fields: Dict[str, Any] = {}
-    for k in ("p_ac_w","grid_v","freq_hz","i_ac_a","v_dc_v","v_dc"):
-        if k in row and row.get(k) is not None:
-            fields[k] = row.get(k)
 
-    meta: Dict[str, Any] = {}
-    for k in ("manufacturer","model","serial","source","sunspec_base"):
-        if k in row and row.get(k) is not None:
-            meta[k] = row.get(k)
+@router.get("/site/{site_id}/device/{device_id}/series")
+@router.get("/site/{site_id}/devices/{device_id}/series")  # compat vecchio path
+def device_series(
+    site_id: str,
+    device_id: str,
+    minutes: int = Query(120, ge=5, le=7 * 24 * 60),
+    every: str = Query("10s"),
+):
+    """
+    Timeseries per singolo device (p_ac_w).
+    """
+    sid = _normalize_site_id(site_id)
+    influx_dev = _map_request_to_influx_id(sid, device_id)
 
-    return {
-        "site_id": site_id,
-        "device_id": device_id,
-        "ok": True,
-        "last_ts": ts_iso,
-        "age_s": _age_s(ts_iso),
-        "fields": fields,
-        "meta": meta,
-        "raw": row,
-    }
-
-@router.get("/site/{site_id}/devices/{device_id}/series")
-def device_series(site_id: str, device_id: str, minutes: int = 120, every: str = "10s"):
-    q = _influx_q()
-    org = _INFLUX["org"]
-    bucket = _INFLUX["bucket"]
-    minutes = max(1, min(int(minutes), 24*60))
-
-    flux = f'''
-from(bucket: "{bucket}")
-  |> range(start: -{minutes}m)
-  |> filter(fn: (r) => r["_measurement"] == "pv_telemetry_v2")
-  |> filter(fn: (r) => r["site_id"] == "{site_id}")
-  |> filter(fn: (r) => r["device_id"] == "{device_id}")
-  |> aggregateWindow(every: {every}, fn: mean, createEmpty: false)
-  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
-  |> keep(columns: ["_time","p_ac_w","grid_v","freq_hz","i_ac_a","v_dc_v","v_dc"])
-'''
-    tables = q.query(query=flux, org=org)
-
-    t_out: List[str] = []
-    out = {
-        "site_id": site_id,
-        "device_id": device_id,
-        "t": t_out,
-        "p_ac_w": [],
-        "grid_v": [],
-        "freq_hz": [],
-        "i_ac_a": [],
-        "v_dc_v": [],
-        "v_dc": [],
-    }
-
-    for tb in tables:
-        for rec in tb.records:
-            v = rec.values
-            ts = v.get("_time")
-            if hasattr(ts, "isoformat"):
-                ts_iso = ts.isoformat().replace("+00:00","Z")
-            else:
-                ts_iso = str(ts)
-            t_out.append(ts_iso)
-            for k in ("p_ac_w","grid_v","freq_hz","i_ac_a","v_dc_v","v_dc"):
-                out[k].append(v.get(k))
-
-    return out
-
-# ------------------------
-# Per-device endpoints (latest / series)
-# ------------------------
-from influxdb_client import InfluxDBClient
-from influxdb_client.client.write_api import SYNCHRONOUS
-
-INFLUX_URL = os.getenv("INFLUX_URL", "http://influxdb:8086")
-INFLUX_TOKEN = os.getenv("INFLUX_TOKEN", "")
-INFLUX_ORG = os.getenv("INFLUX_ORG", "")
-INFLUX_BUCKET = os.getenv("INFLUX_BUCKET", os.getenv("INFLUXDB_BUCKET", ""))
-
-def _influx_query(flux: str):
-    if not INFLUX_TOKEN or not INFLUX_ORG or not INFLUX_BUCKET:
-        raise RuntimeError("Influx env missing. Set INFLUX_TOKEN, INFLUX_ORG, INFLUX_BUCKET (or INFLUXDB_BUCKET).")
-    cli = InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG, timeout=10_000)
     try:
-        q = cli.query_api()
-        return q.query(flux, org=INFLUX_ORG)
-    finally:
-        try: cli.close()
-        except Exception: pass
+        q = _influx_query_api()
 
-@router.get("/site/{site_id}/devices/{device_id}/latest")
-def device_latest(site_id: str, device_id: str):
-    """
-    Latest telemetry point for a single inverter/device.
-    Reads measurement pv_telemetry_v2 written by edge-driver with tag device_id.
-    """
-    minutes = 60 * 24  # search last 24h for the latest point
-    flux = f'''
+        flux = f"""
 from(bucket: "{INFLUX_BUCKET}")
   |> range(start: -{minutes}m)
-  |> filter(fn: (r) => r._measurement == "pv_telemetry_v2")
-  |> filter(fn: (r) => r.site_id == "{site_id}")
-  |> filter(fn: (r) => r.device_id == "{device_id}")
-  |> last()
-'''
-    tables = _influx_query(flux)
-
-    fields = {}
-    ts = None
-    tags = {}
-    for t in tables:
-        for r in t.records:
-            ts = r.get_time().isoformat() if r.get_time() else ts
-            # fields are returned as _field/_value
-            f = r.get_field()
-            v = r.get_value()
-            if f:
-                fields[f] = v
-            # best-effort tags
-            for k in ("device", "device_id", "modbus_host", "modbus_port", "unit_id", "source"):
-                try:
-                    vv = r.values.get(k)
-                    if vv is not None:
-                        tags[k] = vv
-                except Exception:
-                    pass
-
-    return {"site_id": site_id, "device_id": device_id, "ts": ts, "fields": fields, "tags": tags}
-
-@router.get("/site/{site_id}/devices/{device_id}/series")
-def device_series(site_id: str, device_id: str, minutes: int = 120, every: str = "10s"):
-    """
-    Timeseries for a single device (p_ac_w only for now, extend later).
-    """
-    minutes = max(5, min(int(minutes), 7*24*60))
-    every = (every or "10s").strip()
-
-    flux = f'''
-from(bucket: "{INFLUX_BUCKET}")
-  |> range(start: -{minutes}m)
-  |> filter(fn: (r) => r._measurement == "pv_telemetry_v2")
-  |> filter(fn: (r) => r.site_id == "{site_id}")
-  |> filter(fn: (r) => r.device_id == "{device_id}")
+  |> filter(fn: (r) => r._measurement == "{MEASUREMENT}")
+  |> filter(fn: (r) => r["{TAG_SITE}"] == "{sid}")
+  |> filter(fn: (r) => r["{TAG_DEVICE}"] == "{influx_dev}")
   |> filter(fn: (r) => r._field == "p_ac_w")
   |> aggregateWindow(every: {every}, fn: mean, createEmpty: false)
-  |> yield(name: "mean")
-'''
-    tables = _influx_query(flux)
+  |> keep(columns: ["_time","_value"])
+""".strip()
 
-    t_out = []
-    pac = []
-    for t in tables:
-        for r in t.records:
-            tt = r.get_time()
-            vv = r.get_value()
-            if tt is None:
-                continue
-            t_out.append(tt.isoformat())
-            pac.append(vv)
+        tables = q.query(flux, org=INFLUX_ORG)
 
-    return {"site_id": site_id, "device_id": device_id, "t": t_out, "p_ac_w": pac}
+        t_out: List[str] = []
+        pac: List[Optional[float]] = []
+        for tb in tables or []:
+            for rec in tb.records:
+                ts = rec.get_time()
+                if not ts:
+                    continue
+                t_out.append(ts.isoformat().replace("+00:00", "Z"))
+                v = rec.get_value()
+                pac.append(float(v) if isinstance(v, (int, float)) else None)
+
+        return {
+            "site_id": sid,
+            "device_id": device_id,
+            "device_influx": influx_dev,
+            "t": t_out,
+            "p_ac_w": pac,
+            "minutes": minutes,
+            "every": every,
+        }
+
+    except Exception as e:
+        print("[devices_api] device_series FAILED:", repr(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"device_series failed: {e}")

@@ -567,19 +567,10 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-  const $ = (id) => document.getElementById(id);
-
-  // --- EARLY BOOT (must not crash) ---
-  try { const hl = $("hostLabel"); if (hl) hl.innerText = (location.host || "—"); } catch(e) {}
-  try {
-    fetch("/openapi.json", { cache:"no-store" })
-      .then(r => { try{ const as=$("apiStatus"); if(as) as.innerText = `API: ${r.status}`; }catch(e){} })
-      .catch(_ => { try{ const as=$("apiStatus"); if(as) as.innerText = "API: err"; }catch(e){} });
-  } catch(e) {}
-
-  // (facoltativo) marker di boot, innocuo
   try{
     document.title = "Control Room – LOADED";
+    try{ const hl=document.getElementById("hostLabel"); if(hl) hl.innerText = (location.host || "—"); }catch(e){}
+    try{ const as=document.getElementById("apiStatus"); if(as) as.innerText = "API: …"; }catch(e){}
     const m = document.createElement("div");
     m.id="__boot_marker";
     m.textContent="BOOT OK " + new Date().toISOString();
@@ -596,22 +587,34 @@ document.addEventListener("DOMContentLoaded", () => {
     m.style.fontSize="12px";
     document.body.appendChild(m);
     console.log("BOOT_MARKER_OK");
-  }catch(e){}
+    try{
+      let k=0;
+      const t=setInterval(()=>{
+        k++;
+        try{
+          const hl=document.getElementById("hostLabel");
+          if(hl) hl.innerText = (location.host || "—");
+          if(k>=5) clearInterval(t);
+        }catch(e){}
+      }, 1000);
+    }catch(e){}}catch(e){}
+  const $ = (id) => document.getElementById(id);
+
+// --- EARLY BOOT (must not crash) ---
+try { $("hostLabel").innerText = (location.host || "—"); } catch(e) {}
+try {
+  fetch("/openapi.json", { cache:"no-store" })
+    .then(r => { try{$("apiStatus").innerText = `API: ${r.status}`;}catch(e){} })
+    .catch(_ => { try{$("apiStatus").innerText = "API: err";}catch(e){} });
+} catch(e) {}
 
   let selected = null;
   let selectedDevice = null; // {site_id, id, name}
-
-  // UI state
   let expandedSites = {};
-  try{ expandedSites = JSON.parse(localStorage.getItem("expandedSites")||"{}") || {}; }catch(e){ expandedSites = {}; }
-
-  // data stores
-  let sitesStatus = [];         // from WS
-  let allSites = [];            // derived from WS/localStorage
-  let devicesBySite = {};       // siteId -> devices[]
-  let deviceStatusBySite = {};  // siteId -> status devices
-
-  // range
+  let sitesStatus = [];   // from WS
+  let allSites = [];      // from /sites
+  let devicesBySite = {}; // siteId -> devices[]
+  let deviceStatusBySite = {}; // site_id -> status devices
   let rangeMinutes = Number(localStorage.getItem("rangeMinutes") || 120);
   if(!isFinite(rangeMinutes) || rangeMinutes<=0) rangeMinutes = 120;
 
@@ -619,43 +622,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Charts
   let chartPV = null;
-  let chartInv = null;
-  let chartWeather = null;
+let chartInv = null;
+let chartWeather = null;
 
-  // ---------------------------
-  // small utils
-  // ---------------------------
-  function pushEvent(title, desc, kind="info"){
-    const el = $("events");
-    if(!el) return;
-    const node = document.createElement("div");
-    node.className = "evt";
-    const stamp = new Date().toLocaleTimeString();
-    const k = (kind === "warn") ? "warn" : (kind === "err" ? "err" : "info");
-    node.innerHTML = `
-      <div class="t">${title} <span style="color:var(--muted);font-weight:600;font-size:12px;">(${stamp})</span></div>
-      <div class="d">${desc}</div>
-      <div class="k">${k}</div>
-    `;
-    el.prepend(node);
-    while(el.children.length > 10) el.removeChild(el.lastChild);
+function safeInitCharts(){
+  if(!window.echarts){
+    try{ pushEvent("Charts", "ECharts non caricato (CDN bloccato/offline). Dashboard avviata senza grafici.", "warn"); }catch(e){}
+    return;
   }
-
-  function safeInitCharts(){
-    if(!window.echarts){
-      try{ pushEvent("Charts", "ECharts non caricato (CDN bloccato/offline). Dashboard avviata senza grafici.", "warn"); }catch(e){}
-      return;
-    }
-    try{
-      const pv = $("chartPV"), inv = $("chartInv"), wx = $("chartWeather");
-      if(pv) chartPV = echarts.init(pv);
-      if(inv) chartInv = echarts.init(inv);
-      if(wx) chartWeather = echarts.init(wx);
-    }catch(e){
-      try{ pushEvent("Charts", "Errore init grafici: " + (e.message||e), "err"); }catch(_){}
-    }
+  try{
+    chartPV = echarts.init($("chartPV"));
+    chartInv = echarts.init($("chartInv"));
+    chartWeather = echarts.init($("chartWeather"));
+  }catch(e){
+    try{ pushEvent("Charts", "Errore init grafici: " + (e.message||e), "err"); }catch(_){}
   }
-  safeInitCharts();
+}
+safeInitCharts();
 
   function fmt(v, unit="") {
     if (v === null || v === undefined) return "—";
@@ -671,43 +654,22 @@ document.addEventListener("DOMContentLoaded", () => {
     return v.toFixed(2) + (unit ? (" "+unit) : "");
   }
 
-  // Throttle helpers
-  const _nextAt = Object.create(null);
-  function tooSoon(key, ms){
-    const now = Date.now();
-    const t = _nextAt[key] || 0;
-    if(now < t) return true;
-    _nextAt[key] = now + ms;
-    return false;
-  }
-
-  // Safe fetch helpers
-  async function fetchJson(url, opts){
-    const r = await fetch(url, { cache:"no-store", ...(opts||{}) });
-    if(!r.ok){
-      const txt = await r.text().catch(()=> "");
-      const e = new Error(`HTTP ${r.status}`);
-      e.status = r.status;
-      e.body = txt;
-      throw e;
-    }
-    return r.json();
-  }
-
-  // prova più endpoint (utile per /device/ vs /devices/)
-  async function fetchJsonTry(urls, opts){
-    let lastErr = null;
-    for(const u of urls){
-      try{ return await fetchJson(u, opts); }
-      catch(e){ lastErr = e; }
-    }
-    throw lastErr || new Error("fetchJsonTry failed");
+  function pushEvent(title, desc, kind="info"){
+    const el = $("events");
+    const node = document.createElement("div");
+    node.className = "evt";
+    const stamp = new Date().toLocaleTimeString();
+    const k = (kind === "warn") ? "warn" : (kind === "err" ? "err" : "info");
+    node.innerHTML = `
+      <div class="t">${title} <span style="color:var(--muted);font-weight:600;font-size:12px;">(${stamp})</span></div>
+      <div class="d">${desc}</div>
+      <div class="k">${k}</div>
+    `;
+    el.prepend(node);
+    while(el.children.length > 10) el.removeChild(el.lastChild);
   }
 
   function setNoDataPV(show, msg="Nessun dato nel range selezionato"){
-    const hostChart = $("chartPV");
-    if(!hostChart) return;
-
     let el = document.getElementById("chartNoData");
     if(!el){
       el = document.createElement("div");
@@ -722,7 +684,7 @@ document.addEventListener("DOMContentLoaded", () => {
       el.style.fontWeight="700";
       el.style.letterSpacing=".2px";
       el.style.fontSize="13px";
-      const host = hostChart.parentElement;
+      const host = $("chartPV").parentElement;
       if(host) host.style.position="relative";
       (host || document.body).appendChild(el);
     }
@@ -745,57 +707,84 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   function showPVView(){
-    if($("mainPanelTitle")) $("mainPanelTitle").innerText = "Irraggiamento vs Potenza";
-    if($("mainPanelSub")) $("mainPanelSub").innerText = "Aggiornamento live (ultimi minuti)";
-    if($("panelInv")) $("panelInv").style.display = "none";
-    if($("panelWeather")) $("panelWeather").style.display = "none";
-    if($("chartPV")) $("chartPV").style.display = "";
+    $("mainPanelTitle").innerText = "Irraggiamento vs Potenza";
+    $("mainPanelSub").innerText = "Aggiornamento live (ultimi minuti)";
+    $("panelInv").style.display = "none";
+    $("panelWeather").style.display = "none";
+    $("chartPV").style.display = "";
     if(chartPV) chartPV.resize();
   }
 
   function showInvView(){
-    if($("mainPanelTitle")) $("mainPanelTitle").innerText = "Dettaglio inverter";
-    if($("mainPanelSub")) $("mainPanelSub").innerText = "Valori live + trend";
-    if($("chartPV")) $("chartPV").style.display = "none";
-    if($("panelWeather")) $("panelWeather").style.display = "none";
-    if($("panelInv")) $("panelInv").style.display = "";
+    $("mainPanelTitle").innerText = "Dettaglio inverter";
+    $("mainPanelSub").innerText = "Valori live + trend";
+    $("chartPV").style.display = "none";
+    $("panelWeather").style.display = "none";
+    $("panelInv").style.display = "";
     if(chartInv) chartInv.resize();
   }
 
   function showWeatherPanel(){
-    if($("panelWeather")) $("panelWeather").style.display = "";
+    $("panelWeather").style.display = "";
     if(chartWeather) chartWeather.resize();
   }
 
-  // ---------------------------
-  // API: devices + status + pv aggregate
-  // ---------------------------
+  async function fetchSites(){
+    try{
+      // ping API (non serve una lista /sites, usiamo WS per i PV online)
+      const r = await fetch("/openapi.json", { cache: "no-store" });
+      $("apiStatus").innerText = `API: ${r.status}`;
+    }catch(e){
+      $("apiStatus").innerText = `API: err`;
+    }
+
+    // Lista PV ricavata dallo stream WS (e persistita)
+    allSites = (sitesStatus || []).map(s => ({
+      site_id: String(s.site_id),
+      online: (("ok" in s) ? !!s.ok : true),
+      last_edge_status: s.last_ts || null
+    }));
+
+    // fallback: se WS non ha ancora dati, prova da localStorage
+    if(!allSites.length){
+      try{
+        const raw = localStorage.getItem("knownSites") || "[]";
+        const arr = JSON.parse(raw);
+        if(Array.isArray(arr)){
+          allSites = arr.map(x => ({ site_id: String(x.site_id), online: !!x.online, last_edge_status: x.last_edge_status || null }));
+        }
+      }catch(e){}
+    }
+
+    // persisti
+    try{
+      localStorage.setItem("knownSites", JSON.stringify(allSites.slice(0,200)));
+    }catch(e){}
+
+    if(!selected && allSites.length) setSelected(allSites[0].site_id);
+    renderSites();
+}
+
   async function fetchDevices(siteId){
     try{
-      const j = await fetchJson(`/api/site/${encodeURIComponent(siteId)}/devices`);
+      const r = await fetch(`/api/site/${encodeURIComponent(siteId)}/devices`, { cache:"no-store" });
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
       devicesBySite[String(siteId)] = (j.devices || []);
-      return devicesBySite[String(siteId)];
     }catch(e){
       devicesBySite[String(siteId)] = [];
       pushEvent("Devices", `Impossibile caricare devices per ${siteId}: ${e.message}`, "warn");
-      return [];
     }
   }
 
   async function fetchDeviceStatus(siteId){
     try{
-      const j = await fetchJson(`/api/site/${encodeURIComponent(siteId)}/devices/status`);
-      if(j && Array.isArray(j.devices)){
-        j.total = j.devices.length;
-        j.online = j.devices.filter(d => d && d.ok === true).length;
-      } else {
-        j.total = 0; j.online = 0; j.devices = [];
-      }
+      const r = await fetch(`/api/site/${encodeURIComponent(siteId)}/devices/status`, { cache:"no-store" });
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
       deviceStatusBySite[String(siteId)] = j;
-      return j;
     }catch(e){
       deviceStatusBySite[String(siteId)] = { site_id:String(siteId), total:0, online:0, devices:[] };
-      return deviceStatusBySite[String(siteId)];
     }
   }
 
@@ -808,26 +797,9 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   }
 
-  async function fetchPvLatestSum(siteId){
-    if(tooSoon(`pvLatest:${siteId}`, 3000)) return null; // max ~1 ogni 3s
-    try{
-      const j = await fetchJson(`/api/site/${encodeURIComponent(siteId)}/pv/latest`);
-      const v = (typeof j.pac_sum_w === "number") ? j.pac_sum_w : null;
-      if(siteId === selected && $("k_pac")) $("k_pac").innerText = fmt(v, "W");
-      return j;
-    }catch(e){
-      return null;
-    }
-  }
-
-  // ---------------------------
-  // Sidebar render
-  // ---------------------------
   function renderSites(){
-    const qEl = $("q");
-    const q = qEl ? qEl.value.trim().toLowerCase() : "";
+    const q = $("q").value.trim().toLowerCase();
     const el = $("siteList");
-    if(!el) return;
     el.innerHTML = "";
 
     const list = (allSites || [])
@@ -845,6 +817,7 @@ document.addEventListener("DOMContentLoaded", () => {
     for(const s of list){
       const sid = String(s.site_id);
       const st = (sitesStatus || []).find(x => String(x.site_id) === sid);
+
       const pvOk = (st && ("ok" in st)) ? !!st.ok : !!s.online;
 
       const age = (st && (st.age_s != null)) ? st.age_s : (() => {
@@ -860,29 +833,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const row = document.createElement("div");
       row.className = "site" + (activePV ? " active" : "");
-      row.onclick = async () => {
+      row.onclick = () => {
         selectedDevice = null;
-        stopInvPolling();
-        await setSelected(sid);
+        setSelected(sid);
         showPVView();
       };
 
       const expanded = !!expandedSites[sid];
-      const ds = deviceStatusBySite[sid];
-      const badgeExtra = ds ? (" | " + (ds.online ?? 0) + "/" + (ds.total ?? 0)) : "";
-
       row.innerHTML = `
         <div class="siteRow">
           <div class="left">
             <div class="dot ${pvOk ? "ok" : "bad"}"></div>
             <div>
               <div class="name">${sid}</div>
-              <div class="meta">${(age!=null) ? ("age " + age + "s") : (pvOk ? "online" : "offline")}</div>
+              <div class="meta">${(age!=null) ? ("age " + age + "s") : (pvOk ? "online (da /sites)" : "offline (da /sites)")}</div>
             </div>
           </div>
           <div class="siteRight">
             <button class="toggleBtn" data-kind="toggle" title="Espandi">${expanded ? "▾" : "▸"}</button>
-            <div class="badge">${pvOk ? "ONLINE" : "OFFLINE"}${badgeExtra}</div>
+            <div class="badge">${pvOk ? "ONLINE" : "OFFLINE"}${(() => { const ds=deviceStatusBySite[sid]; if(!ds) return ""; return " | " + ds.online + "/" + ds.total; })()}</div>
           </div>
         </div>
       `;
@@ -891,12 +860,9 @@ document.addEventListener("DOMContentLoaded", () => {
       if(tgl){
         tgl.onclick = async (ev) => {
           ev.stopPropagation();
+          await fetchDeviceStatus(sid);
           expandedSites[sid] = !expandedSites[sid];
-          try{ localStorage.setItem("expandedSites", JSON.stringify(expandedSites)); }catch(e){}
-
-          if(expandedSites[sid]){
-            await Promise.all([ fetchDevices(sid), fetchDeviceStatus(sid) ]);
-          }
+          if(expandedSites[sid] && !devicesBySite[sid]) await fetchDevices(sid);
           renderSites();
         };
       }
@@ -921,7 +887,6 @@ document.addEventListener("DOMContentLoaded", () => {
             renderSites();
             showInvView();
             renderInverter(sid, did, nm);
-            startInvPolling();
           };
 
           const dotCls = (invOk === true) ? "ok" : (invOk === false ? "bad" : "unk");
@@ -942,37 +907,26 @@ document.addEventListener("DOMContentLoaded", () => {
           `;
           el.appendChild(child);
         }
-
-        if(devs.length === 0){
-          const empty = document.createElement("div");
-          empty.style.color = "#9fb0d0";
-          empty.style.fontSize = "12px";
-          empty.style.padding = "8px 10px 12px 28px";
-          empty.textContent = "Nessun device configurato. Apri Settings → Load/Save per aggiungerli.";
-          el.appendChild(empty);
-        }
       }
     }
   }
 
-  // ---------------------------
-  // KPI / PV chart
-  // ---------------------------
   function refreshSelectedKpi(){
     if(!selected){
-      if($("k_status")) $("k_status").innerText="—";
-      if($("k_age")) $("k_age").innerText="—";
-      if($("k_pac")) $("k_pac").innerText="—";
-      if($("k_weather")) $("k_weather").innerText="—";
-      if($("k_weather_hint")) $("k_weather_hint").innerText="Temp / Cloud / UV";
-      if($("k_health")) $("k_health").innerText="—";
-      if($("k_status")) $("k_status").style.color = "var(--text)";
-      if($("k_health")) $("k_health").style.color = "var(--muted)";
+      $("k_status").innerText="—";
+      $("k_age").innerText="—";
+      $("k_pac").innerText="—";
+      $("k_weather").innerText="—";
+      $("k_weather_hint").innerText="Temp / Cloud / UV";
+      $("k_health").innerText="—";
+      $("k_status").style.color = "var(--text)";
+      $("k_health").style.color = "var(--muted)";
       return;
     }
 
     const st = (sitesStatus || []).find(x => String(x.site_id) === String(selected));
     const ss = (allSites || []).find(x => String(x.site_id) === String(selected));
+
     const ok = (st && ("ok" in st)) ? !!st.ok : !!(ss && ss.online);
 
     const age = (st && (st.age_s != null)) ? st.age_s : (() => {
@@ -984,61 +938,176 @@ document.addEventListener("DOMContentLoaded", () => {
       }catch(e){ return null; }
     })();
 
-    if($("k_status")){
-      $("k_status").innerText = ok ? "ONLINE" : "OFFLINE";
-      $("k_status").style.color = ok ? "var(--ok)" : "var(--bad)";
-    }
+    $("k_status").innerText = ok ? "ONLINE" : "OFFLINE";
+    $("k_status").style.color = ok ? "var(--ok)" : "var(--bad)";
     const last = (st && st.last_ts) ? st.last_ts : ((ss && ss.last_edge_status) ? ss.last_edge_status : "?");
-    if($("k_age")) $("k_age").innerText = (age!=null) ? (`Ultimo dato: ${last} | age ${age}s`) : "Nessun dato ancora";
+    $("k_age").innerText = (age!=null) ? (`Ultimo dato: ${last} | age ${age}s`) : "Nessun dato ancora";
+    $("k_health").innerText = ok ? "OK" : ((age!=null) ? "STALE" : "—");
+    $("k_health").style.color = ok ? "var(--ok)" : ((age!=null) ? "var(--warn)" : "var(--muted)");
+  }
 
-    if($("k_health")){
-      $("k_health").innerText = ok ? "OK" : ((age!=null) ? "STALE" : "—");
-      $("k_health").style.color = ok ? "var(--ok)" : ((age!=null) ? "var(--warn)" : "var(--muted)");
+
+  // ===========================
+  // PV aggregation (sum of inverter devices)
+  // ===========================
+  function getEnabledDevices(siteId){
+    const devs = (devicesBySite[String(siteId)] || []);
+    // enabled true OR missing => consider enabled by default
+    return devs.filter(d => (d.enabled === undefined) ? true : !!d.enabled);
+  }
+
+  async function ensureDevicesLoaded(siteId){
+    const sid = String(siteId);
+    if(!devicesBySite[sid]){
+      await fetchDevices(sid);
     }
   }
 
-  // Serie PV: p_ac_w SUM (pv_aggregate), poa opzionale da endpoint legacy
-  async function fetchSeriesPV(){
-    if(!selected) return;
-    if(tooSoon(`pvSeries:${selected}`, 8000)) return; // max ~1 ogni 8s
-
-    const minutes = rangeMinutes;
-    if($("rangePill")) $("rangePill").innerText = `range: ${minutes}m`;
-
-    const pReq  = fetch(`/api/site/${encodeURIComponent(selected)}/pv/series?minutes=${minutes}&every=10s`, { cache:"no-store" });
-    const poaReq = fetch(`/api/site/${encodeURIComponent(selected)}/series?minutes=${minutes}&every=10s`,     { cache:"no-store" });
-
+  async function fetchPvAggregateLatest(siteId){
     try{
-      const [rp, rpoa] = await Promise.allSettled([pReq, poaReq]);
+      await ensureDevicesLoaded(siteId);
+      const devs = getEnabledDevices(siteId);
+      if(!devs.length) return { pac_sum: null, details: [] };
 
-      let tISO = [];
-      let pac = [];
-      if(rp.status === "fulfilled" && rp.value.ok){
-        const jp = await rp.value.json();
-        tISO = (jp.t || []);
-        pac = Array.isArray(jp.p_ac_w) ? jp.p_ac_w : [];
-      } else if(rp.status === "fulfilled") {
-        throw new Error(`PV aggregate HTTP ${rp.value.status}`);
-      } else {
-        throw rp.reason;
-      }
-
-      if(pac.length && $("k_pac")) $("k_pac").innerText = fmt(pac[pac.length-1], "W");
-
-      let poa = [];
-      if(rpoa.status === "fulfilled" && rpoa.value.ok){
-        const jpoa = await rpoa.value.json();
-        poa = Array.isArray(jpoa.poa_wm2) ? jpoa.poa_wm2 : [];
-      }
-
-      const t = (tISO || []).map(x => {
-        try{ return new Date(x).toLocaleTimeString(); }catch(e){ return String(x); }
+      const reqs = devs.map(async d => {
+        const did = String(d.id || d.name || "");
+        if(!did) return { id: null, ok:false, pac:null, last_ts:null };
+        const r = await fetch(`/api/site/${encodeURIComponent(siteId)}/device/${encodeURIComponent(did)}/latest`, { cache:"no-store" });
+        if(!r.ok) return { id: did, ok:false, pac:null, last_ts:null };
+        const j = await r.json();
+        const pac = (j && j.fields && typeof j.fields.p_ac_w === "number") ? j.fields.p_ac_w : null;
+        return { id: did, ok:true, pac, last_ts: j.last_ts || null };
       });
 
-      if(!t.length){
+      const rows = await Promise.all(reqs);
+      let sum = 0;
+      let has = false;
+      for(const r of rows){
+        if(typeof r.pac === "number"){
+          sum += r.pac;
+          has = true;
+        }
+      }
+      return { pac_sum: has ? sum : null, details: rows };
+    }catch(e){
+      return { pac_sum: null, details: [], err: String((e && e.message) || e) };
+    }
+  }
+
+  async function fetchPvAggregateSeries(siteId, minutes, every="10s"){
+    // Somma point-by-point allineando per timestamp ISO
+    await ensureDevicesLoaded(siteId);
+    const devs = getEnabledDevices(siteId);
+    if(!devs.length) return { t: [], pac: [] };
+
+    const reqs = devs.map(async d => {
+      const did = String(d.id || d.name || "");
+      if(!did) return { did:null, t:[], pac:[] };
+      const r = await fetch(`/api/site/${encodeURIComponent(siteId)}/device/${encodeURIComponent(did)}/series?minutes=${minutes}&every=${encodeURIComponent(every)}`, { cache:"no-store" });
+      if(!r.ok) return { did, t:[], pac:[] };
+      const j = await r.json();
+      return { did, t: (j.t || []), pac: (Array.isArray(j.p_ac_w) ? j.p_ac_w : []) };
+    });
+
+    const series = await Promise.all(reqs);
+
+    const acc = new Map(); // ts -> sum pac
+    for(const ss of series){
+      const t = ss.t || [];
+      const pac = ss.pac || [];
+      for(let i=0;i<t.length;i++){
+        const key = String(t[i]);
+        const v = (typeof pac[i] === "number") ? pac[i] : 0;
+        acc.set(key, (acc.get(key) || 0) + v);
+      }
+    }
+
+    const keys = Array.from(acc.keys()).sort(); // ISO sort ok
+    const pacSum = keys.map(k => acc.get(k));
+    return { t: keys, pac: pacSum };
+  }
+
+  async function fetchSeriesPV(){
+    if(!selected) return;
+    try{
+      const minutes = rangeMinutes;
+      $("rangePill").innerText = `range: ${minutes}m`;
+
+      // 1) POA (teniamo l'endpoint PV per irraggiamento/poa)
+      let poa = [];
+      try{
+        const rSite = await fetch(`/api/site/${encodeURIComponent(selected)}/series?minutes=${minutes}&every=10s`, { cache:"no-store" });
+        if(rSite.ok){
+          const jSite = await rSite.json();
+          poa = Array.isArray(jSite.poa_wm2) ? jSite.poa_wm2 : [];
+        }
+      }catch(e){}
+
+      // 2) PAC aggregata dagli inverter (devices)
+      let tAgg = [];
+      let pacAgg = [];
+      try{
+        const agg = await fetchPvAggregateSeries(selected, minutes, "10s");
+        tAgg = (agg.t || []);
+        pacAgg = (agg.pac || []);
+      }catch(e){}
+
+      // 3) fallback PAC: se non ho devices/serie vuota, usa la serie PV standard
+      if(!tAgg.length){
+        const r = await fetch(`/api/site/${encodeURIComponent(selected)}/series?minutes=${minutes}&every=10s`, { cache:"no-store" });
+        if(!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        tAgg = (j.t || []);
+        pacAgg = Array.isArray(j.p_ac_w) ? j.p_ac_w : [];
+        if(!poa.length) poa = Array.isArray(j.poa_wm2) ? j.poa_wm2 : [];
+      }
+
+      // 4) KPI PAC = somma latest inverter (più affidabile del last punto serie)
+      try{
+        const latestAgg = await fetchPvAggregateLatest(selected);
+        if(typeof latestAgg.pac_sum === "number"){
+          $("k_pac").innerText = fmt(latestAgg.pac_sum, "W");
+        }else if(pacAgg.length){
+          $("k_pac").innerText = fmt(pacAgg[pacAgg.length-1], "W");
+        }else{
+          $("k_pac").innerText = "—";
+        }
+      }catch(e){
+        if(pacAgg.length) $("k_pac").innerText = fmt(pacAgg[pacAgg.length-1], "W");
+      }
+
+      if(!tAgg.length){
         setNoDataPV(true);
         return;
       }
+      setNoDataPV(false);
+
+      const t = tAgg.map(x => new Date(x).toLocaleTimeString());
+
+      // allinea POA se ha lunghezza diversa
+      let poaAligned = poa || [];
+      let pacAligned = pacAgg || [];
+      let tAligned = t || [];
+      if(poaAligned.length && poaAligned.length !== tAgg.length){
+        const minLen = Math.min(poaAligned.length, tAgg.length, pacAligned.length, tAligned.length);
+        poaAligned = poaAligned.slice(poaAligned.length - minLen);
+        pacAligned = pacAligned.slice(pacAligned.length - minLen);
+        tAligned = tAligned.slice(tAligned.length - minLen);
+      }
+
+      if(chartPV) chartPV.setOption({
+        xAxis: { data: tAligned },
+        series: [
+          { name: "Potenza AC (W)", type: "line", smooth:true, showSymbol:false, data: pacAligned },
+          { name: "POA (W/m²)",     type: "line", smooth:true, showSymbol:false, yAxisIndex: 1, data: poaAligned }
+        ]
+      }, { notMerge:false, lazyUpdate:true });
+
+    }catch(e){
+      pushEvent("Serie", "Impossibile caricare serie PV: " + ((e && e.message) ? e.message : e), "warn");
+    }
+  }
+
       setNoDataPV(false);
 
       if(chartPV) chartPV.setOption({
@@ -1050,57 +1119,54 @@ document.addEventListener("DOMContentLoaded", () => {
       }, { notMerge:false, lazyUpdate:true });
 
     }catch(e){
-      pushEvent("Serie", `Impossibile caricare serie PV: ${e.message}`, "warn");
+      pushEvent("Serie", "Impossibile caricare serie PV: " + ((e && e.message) ? e.message : e), "warn");
     }
   }
 
-  // ---------------------------
-  // Inverter view (supporta /device e /devices)
-  // ---------------------------
   let invFailUntil = 0;
   async function renderInverter(siteId, deviceId, deviceName){
     if(Date.now() < invFailUntil) return;
 
-    if($("title")) $("title").innerText = `${deviceName || deviceId}`;
-    if($("subtitle")) $("subtitle").innerText = `Dettaglio inverter ${deviceId} (${siteId})`;
+    $("title").innerText = `${deviceName || deviceId}`;
+    $("subtitle").innerText = `Dettaglio inverter ${deviceId} (${siteId})`;
 
     // latest
     try{
-      const j = await fetchJsonTry([
-        `/api/site/${encodeURIComponent(siteId)}/device/${encodeURIComponent(deviceId)}/latest`,
-        `/api/site/${encodeURIComponent(siteId)}/devices/${encodeURIComponent(deviceId)}/latest`,
-      ]);
+      const r = await fetch(`/api/site/${encodeURIComponent(siteId)}/device/${encodeURIComponent(deviceId)}/latest`, { cache:"no-store" });
+      if(!r.ok){
+        if(r.status===404) invFailUntil = Date.now()+10000;
+        throw new Error(`HTTP ${r.status}`);
+      }
+      const j = await r.json();
 
       const f = (j.fields || {});
-      const pac   = f.p_ac_w ?? null;
-      const vdc   = f.v_dc_v ?? null;
+      const pac = f.p_ac_w ?? null;
+      const vdc = f.v_dc_v ?? null;
       const gridv = f.grid_v ?? null;
-      const hz    = f.freq_hz ?? null;
+      const hz = f.freq_hz ?? null;
 
-      if($("inv_pac"))   $("inv_pac").innerText   = fmt((typeof pac==='number')?pac:null, "W");
-      if($("inv_vdc"))   $("inv_vdc").innerText   = fmt((typeof vdc==='number')?vdc:null, "V");
-      if($("inv_gridv")) $("inv_gridv").innerText = fmt((typeof gridv==='number')?gridv:null, "V");
-      if($("inv_hz"))    $("inv_hz").innerText    = fmt((typeof hz==='number')?hz:null, "Hz");
-      if($("inv_ts"))    $("inv_ts").innerText    = j.last_ts ? ("ts " + j.last_ts) : (j.ts ? ("ts " + j.ts) : "—");
-      if($("inv_raw"))   $("inv_raw").textContent = JSON.stringify(j, null, 2);
+      $("inv_pac").innerText = fmt((typeof pac==='number')?pac:null, "W");
+      $("inv_vdc").innerText = fmt((typeof vdc==='number')?vdc:null, "V");
+      $("inv_gridv").innerText = fmt((typeof gridv==='number')?gridv:null, "V");
+      $("inv_hz").innerText = fmt((typeof hz==='number')?hz:null, "Hz");
+      $("inv_ts").innerText = j.last_ts ? ("ts " + j.last_ts) : "—";
+      $("inv_raw").textContent = JSON.stringify(j, null, 2);
 
     }catch(e){
-      if(e && e.status === 404) invFailUntil = Date.now()+8000;
       pushEvent("INV", `latest: ${e.message}`, "warn");
-      if($("inv_raw")) $("inv_raw").textContent = "(errore latest: " + e.message + ")";
+      $("inv_raw").textContent = "(errore latest: " + e.message + ")";
     }
 
     // series
     try{
       const minutes = rangeMinutes;
-      const j2 = await fetchJsonTry([
-        `/api/site/${encodeURIComponent(siteId)}/device/${encodeURIComponent(deviceId)}/series?minutes=${minutes}&every=10s`,
-        `/api/site/${encodeURIComponent(siteId)}/devices/${encodeURIComponent(deviceId)}/series?minutes=${minutes}&every=10s`,
-      ]);
-
-      const t = (j2.t || []).map(x => {
-        try{ return new Date(x).toLocaleTimeString(); }catch(e){ return String(x); }
-      });
+      const r2 = await fetch(`/api/site/${encodeURIComponent(siteId)}/device/${encodeURIComponent(deviceId)}/series?minutes=${minutes}&every=10s`, { cache:"no-store" });
+      if(!r2.ok){
+        if(r2.status===404) invFailUntil = Date.now()+10000;
+        throw new Error(`HTTP ${r2.status}`);
+      }
+      const j2 = await r2.json();
+      const t = (j2.t || []).map(x => new Date(x).toLocaleTimeString());
       const pac = Array.isArray(j2.p_ac_w) ? j2.p_ac_w : [];
 
       if(chartInv) chartInv.setOption({
@@ -1112,159 +1178,35 @@ document.addEventListener("DOMContentLoaded", () => {
       }, { notMerge:true, lazyUpdate:true });
 
     }catch(e){
-      if(e && e.status === 404) invFailUntil = Date.now()+8000;
       pushEvent("INV", `series: ${e.message}`, "warn");
     }
   }
 
-  // ---------------------------
-  // Weather UI (SVG coerenti + robustezza su 5xx)
-  // ---------------------------
-  function ensureWxIconHost(){
-    const k = $("k_weather");
-    if(!k) return null;
-
-    let host = document.getElementById("wxIconHost");
-    if(host) return host;
-
-    host = document.createElement("span");
-    host.id = "wxIconHost";
-    host.style.display = "inline-flex";
-    host.style.alignItems = "center";
-    host.style.gap = "8px";
-
-    const txt = document.createElement("span");
-    txt.id = "wxTextHost";
-    txt.textContent = k.textContent || "—";
-
-    k.textContent = "";
-    host.appendChild(makeWxIcon("unknown"));
-    host.appendChild(txt);
-    k.appendChild(host);
-
-    return host;
-  }
-
-  function setWxText(text){
-    const host = ensureWxIconHost();
-    if(!host) return;
-    const txt = document.getElementById("wxTextHost");
-    if(txt) txt.textContent = text;
-  }
-
-  function setWxIcon(kind){
-    const host = ensureWxIconHost();
-    if(!host) return;
-    const old = host.querySelector("svg");
-    const svg = makeWxIcon(kind);
-    svg.style.color = "var(--text)";
-    if(old) old.replaceWith(svg);
-    else host.prepend(svg);
-  }
-
-  function makeWxIcon(kind){
-    const stroke = `stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"`;
-    const wrap = (inner) => {
-      const s = document.createElementNS("http://www.w3.org/2000/svg","svg");
-      s.setAttribute("width","22"); s.setAttribute("height","22");
-      s.setAttribute("viewBox","0 0 24 24");
-      s.setAttribute("fill","none");
-      s.style.opacity = "0.95";
-      s.style.filter = "drop-shadow(0 2px 6px rgba(0,0,0,.25))";
-      s.innerHTML = inner;
-      return s;
-    };
-
-    if(kind === "sun"){
-      return wrap(`
-        <circle cx="12" cy="12" r="4.2" ${stroke}/>
-        <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M4.3 4.3l1.6 1.6M18.1 18.1l1.6 1.6M19.7 4.3l-1.6 1.6M5.9 18.1l-1.6 1.6" ${stroke}/>
-      `);
-    }
-    if(kind === "cloud"){
-      return wrap(`<path d="M7.5 18h9.2a4 4 0 0 0 .3-8 5.7 5.7 0 0 0-11 1.8A3.5 3.5 0 0 0 7.5 18Z" ${stroke}/>`);
-    }
-    if(kind === "partly"){
-      return wrap(`
-        <path d="M7.5 18h9.2a4 4 0 0 0 .3-8 5.7 5.7 0 0 0-11 1.8A3.5 3.5 0 0 0 7.5 18Z" ${stroke}/>
-        <path d="M7.6 7.7a4.2 4.2 0 0 1 6.9-1.8" ${stroke}/>
-        <path d="M6.2 5.6l1 1M4.1 8.3h1.4M5.2 11l1-.8" ${stroke}/>
-      `);
-    }
-    if(kind === "uv"){
-      return wrap(`
-        <path d="M7 15c.8 1.6 2.7 2.7 5 2.7 2.3 0 4.2-1.1 5-2.7" ${stroke}/>
-        <path d="M8.5 11.3l-1.2 3.9M15.5 11.3l1.2 3.9" ${stroke}/>
-        <path d="M9.5 8.2c.8-1 1.9-1.6 2.5-1.6s1.7.6 2.5 1.6" ${stroke}/>
-      `);
-    }
-    return wrap(`
-      <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" ${stroke}/>
-      <path d="M12 16h.01M10.8 9.5a1.8 1.8 0 1 1 2.7 1.6c-.7.4-1.2.9-1.2 1.8v.5" ${stroke}/>
-    `);
-  }
-
-  function pickWxKind(tempC, cloudPct, uv){
-    const cl = (typeof cloudPct === "number") ? cloudPct : null;
-    const u  = (typeof uv === "number") ? uv : null;
-    if(cl == null){
-      if(u != null && u >= 6) return "uv";
-      return "unknown";
-    }
-    if(cl >= 75) return "cloud";
-    if(cl >= 35) return "partly";
-    if(u != null && u >= 6) return "uv";
-    return "sun";
-  }
-
-  // Weather (throttle + backoff su 5xx/502/429)
-  const wxFailUntil = Object.create(null);
   async function loadWeatherForSelected(){
     if(!selected) return;
-
-    if(tooSoon(`wx:${selected}`, 15000)) return; // max ~1 ogni 15s
-
-    const fu = wxFailUntil[selected] || 0;
-    if(Date.now() < fu) return;
-
     try{
       const r = await fetch(`/api/site/${encodeURIComponent(selected)}/weather`, { cache:"no-store" });
-
       if(!r.ok){
-        // 400 = config mancante (ok), 429/5xx/502 = rate limit o backend/gateway rotto -> backoff
-        if([429,500,502,503,504].includes(r.status)){
-          wxFailUntil[selected] = Date.now() + 60000; // 60s di pausa
-        }
-        setWxIcon("unknown");
-        setWxText("—");
-        if($("k_weather_hint")){
-          $("k_weather_hint").innerText =
-            (r.status===400) ? "Config meteo non impostata" : ("Meteo HTTP " + r.status);
-        }
+        // se non configurato -> 400 (lat/lon missing)
+        $("k_weather").innerText = "—";
+        $("k_weather_hint").innerText = (r.status===400) ? "Config meteo non impostata" : ("Meteo HTTP " + r.status);
         return;
       }
-
       const j = await r.json();
       const c = j.current || {};
-      const t  = (typeof c.temperature_2m === "number") ? c.temperature_2m : null;
-      const cl = (typeof c.cloud_cover === "number")    ? c.cloud_cover    : null;
-      const uv = (typeof c.uv_index === "number")       ? c.uv_index       : null;
+      const t = (typeof c.temperature_2m === "number") ? c.temperature_2m : null;
+      const cl = (typeof c.cloud_cover === "number") ? c.cloud_cover : null;
+      const uv = (typeof c.uv_index === "number") ? c.uv_index : null;
 
-      setWxIcon(pickWxKind(t, cl, uv));
+      $("k_weather").innerText = (t==null && cl==null && uv==null) ? "—" : `${fmt(t,"°C")} | ${fmt(cl,"%")} | UV ${uv==null?"—":uv.toFixed(2)}`;
+      $("k_weather_hint").innerText = "Temp | Cloud | UV";
 
-      const label = (t==null && cl==null && uv==null)
-        ? "—"
-        : `${fmt(t,"°C")} | ${fmt(cl,"%")} | UV ${uv==null?"—":uv.toFixed(2)}`;
-      setWxText(label);
-
-      if($("k_weather_hint")) $("k_weather_hint").innerText = "Temp | Cloud | UV";
-
-      // Chart meteo (se presente)
+      // forecast chart
       const ht = (j.production_est_kw || {}).time || [];
-      const pk = (j.production_est_kw || {}).p_kw  || [];
+      const pk = (j.production_est_kw || {}).p_kw || [];
       const hourly = j.hourly || {};
       const cloud = hourly.cloud_cover || [];
-      const uu    = hourly.uv_index    || [];
+      const uu = hourly.uv_index || [];
 
       const x = ht.map(s => {
         try{
@@ -1279,62 +1221,47 @@ document.addEventListener("DOMContentLoaded", () => {
         xAxis: { type:'category', boundaryGap:false, data: x, axisLabel:{ color:'#9fb0d0', hideOverlap:true } },
         yAxis: [
           { type:'value', name:'kW', axisLabel:{ color:'#9fb0d0'} },
-          { type:'value', name:'%',  axisLabel:{ color:'#9fb0d0'} }
+          { type:'value', name:'%', axisLabel:{ color:'#9fb0d0'} }
         ],
         series: [
           { name:'Prod. stimata (kW)', type:'line', smooth:true, showSymbol:false, data: pk },
-          { name:'Cloud (%)',          type:'line', smooth:true, showSymbol:false, yAxisIndex:1, data: cloud },
-          { name:'UV',                 type:'line', smooth:true, showSymbol:false, data: uu }
+          { name:'Cloud (%)', type:'line', smooth:true, showSymbol:false, yAxisIndex:1, data: cloud },
+          { name:'UV', type:'line', smooth:true, showSymbol:false, data: uu }
         ]
       }, { notMerge:true, lazyUpdate:true });
 
     }catch(e){
-      wxFailUntil[selected] = Date.now() + 60000;
-      setWxIcon("unknown");
-      setWxText("—");
-      if($("k_weather_hint")) $("k_weather_hint").innerText = "Meteo non disponibile";
+      $("k_weather").innerText = "—";
+      $("k_weather_hint").innerText = "Meteo non disponibile";
     }
   }
 
-  // ---------------------------
-  // Selection
-  // ---------------------------
-  async function setSelected(siteId){
+  function setSelected(siteId){
     selected = siteId;
     selectedDevice = null;
-    stopInvPolling();
 
-    if($("title")) $("title").innerText = `Impianto ${siteId}`;
-    if($("subtitle")) $("subtitle").innerText = `Telemetria & KPI live per ${siteId}.`;
+    $("title").innerText = `Impianto ${siteId}`;
+    $("subtitle").innerText = `Telemetria & KPI live per ${siteId}.`;
 
     refreshSelectedKpi();
     showPVView();
-
-    await Promise.all([
-      fetchDevices(siteId),
-      fetchDeviceStatus(siteId),
-      fetchPvLatestSum(siteId),
-    ]);
-
     fetchSeriesPV();
     loadWeatherForSelected();
     renderSites();
   }
 
-  // ---------------------------
-  // Drawer + Config helpers
-  // ---------------------------
-  function openDrawer(){ const o=$("drawerOverlay"); if(o){ o.classList.add("show"); o.setAttribute("aria-hidden","false"); } }
-  function closeDrawer(){ const o=$("drawerOverlay"); if(o){ o.classList.remove("show"); o.setAttribute("aria-hidden","true"); } }
+  // ----- Drawer -----
+  function openDrawer(){ $("drawerOverlay").classList.add("show"); $("drawerOverlay").setAttribute("aria-hidden","false"); }
+  function closeDrawer(){ $("drawerOverlay").classList.remove("show"); $("drawerOverlay").setAttribute("aria-hidden","true"); }
 
-  if($("btnSettings")) $("btnSettings").addEventListener("click", openDrawer);
-  if($("btnCloseDrawer")) $("btnCloseDrawer").addEventListener("click", closeDrawer);
-  if($("btnCloseDrawer2")) $("btnCloseDrawer2").addEventListener("click", closeDrawer);
-  if($("drawerOverlay")) $("drawerOverlay").addEventListener("click", (e) => { if(e.target === $("drawerOverlay")) closeDrawer(); });
+  $("btnSettings").addEventListener("click", openDrawer);
+  $("btnCloseDrawer").addEventListener("click", closeDrawer);
+  $("btnCloseDrawer2").addEventListener("click", closeDrawer);
+  $("drawerOverlay").addEventListener("click", (e) => { if(e.target === $("drawerOverlay")) closeDrawer(); });
 
+  // ----- Modbus table helpers -----
   function setBoxMsg(id, text, kind="info"){
     const el = $(id);
-    if(!el) return;
     el.className = "msg" + (kind==="err" ? " err" : kind==="ok" ? " ok" : "");
     el.textContent = text;
   }
@@ -1397,20 +1324,16 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function mbDevicesFromTable(){
-    const tb = $("mbTbody");
-    if(!tb) return [];
-    const rows = Array.from(tb.querySelectorAll("tr"));
+    const rows = Array.from($("mbTbody").querySelectorAll("tr"));
     return rows.map(r => r._getDevice()).filter(d => d.host);
   }
   function mbUpdateTargets(){
     const devs = mbDevicesFromTable().filter(d => d.enabled);
     const parts = devs.map(d => `${d.host}:${d.port}:${d.unit_id}:${(d.name||'dev')}:${(d.id||'')}`.replace(/:$/,''));
-    if($("mbTargets")) $("mbTargets").textContent = parts.join(",");
+    $("mbTargets").textContent = parts.join(",");
   }
   function mbAddEmpty(){
-    const tb = $("mbTbody");
-    if(!tb) return;
-    tb.appendChild(mbRowTemplate({ enabled:true, name:"device", host:"", port:502, unit_id:1, id:"" }));
+    $("mbTbody").appendChild(mbRowTemplate({ enabled:true, name:"device", host:"", port:502, unit_id:1, id:"" }));
     mbUpdateTargets();
   }
 
@@ -1418,14 +1341,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const url = `/api/site/${encodeURIComponent(siteId)}/devices`;
     try{
       setBoxMsg("mbMsg", `Loading ${url} …`);
-      const cfg = await fetchJson(url);
-      if($("mbTbody")) $("mbTbody").innerHTML = "";
+      const r = await fetch(url, { cache:"no-store" });
+      if(r.status === 404){
+        setBoxMsg("mbMsg", `Endpoint non disponibile: ${url} (404).`, "err");
+        $("mbTbody").innerHTML = "";
+        mbUpdateTargets();
+        return;
+      }
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const cfg = await r.json();
+      $("mbTbody").innerHTML = "";
       (cfg.devices || []).forEach(d => $("mbTbody").appendChild(mbRowTemplate(d)));
       mbUpdateTargets();
       setBoxMsg("mbMsg", "Loaded.", "ok");
-
+      // refresh tree
       devicesBySite[String(siteId)] = (cfg.devices || []);
-      await fetchDeviceStatus(siteId);
       renderSites();
     }catch(e){
       setBoxMsg("mbMsg", `Load error: ${e.message}`, "err");
@@ -1437,41 +1367,41 @@ document.addEventListener("DOMContentLoaded", () => {
     try{
       setBoxMsg("mbMsg", `Saving ${url} …`);
       const payload = { site_id: siteId, devices: mbDevicesFromTable() };
-      const cfg = await fetchJson(url, {
+      const r = await fetch(url, {
         method:"PUT",
         headers:{ "Content-Type":"application/json" },
         body: JSON.stringify(payload)
       });
-
-      if($("mbTbody")) $("mbTbody").innerHTML = "";
+      if(r.status === 404){
+        setBoxMsg("mbMsg", `Endpoint non disponibile: ${url} (404).`, "err");
+        return;
+      }
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const cfg = await r.json();
+      $("mbTbody").innerHTML = "";
       (cfg.devices || []).forEach(d => $("mbTbody").appendChild(mbRowTemplate(d)));
       mbUpdateTargets();
       setBoxMsg("mbMsg", "Saved.", "ok");
-
       devicesBySite[String(siteId)] = (cfg.devices || []);
-      await fetchDeviceStatus(siteId);
-
-      if(selected === siteId){
-        fetchPvLatestSum(siteId);
-        fetchSeriesPV();
-      }
       renderSites();
     }catch(e){
       setBoxMsg("mbMsg", `Save error: ${e.message}`, "err");
     }
   }
 
-  // Weather cfg
+  // ----- Weather cfg -----
   async function wxLoad(siteId){
     const url = `/api/site/${encodeURIComponent(siteId)}/weather_cfg`;
     try{
       setBoxMsg("wxMsg", `Loading ${url} …`);
-      const j = await fetchJson(url);
+      const r = await fetch(url, { cache:"no-store" });
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
       const c = j.cfg || {};
-      if($("wxLat")) $("wxLat").value = (c.lat ?? "");
-      if($("wxLon")) $("wxLon").value = (c.lon ?? "");
-      if($("wxKwp")) $("wxKwp").value = (c.pv_kwp ?? "");
-      if($("wxTz"))  $("wxTz").value  = (c.timezone ?? "UTC");
+      $("wxLat").value = (c.lat ?? "");
+      $("wxLon").value = (c.lon ?? "");
+      $("wxKwp").value = (c.pv_kwp ?? "");
+      $("wxTz").value = (c.timezone ?? "UTC");
       setBoxMsg("wxMsg", c.lat!=null ? "Loaded." : "No cfg set yet.", c.lat!=null ? "ok" : "info");
     }catch(e){
       setBoxMsg("wxMsg", `Load error: ${e.message}`, "err");
@@ -1479,28 +1409,23 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function wxSave(siteId){
-    const lat = ($("wxLat")?.value || "").trim();
-    const lon = ($("wxLon")?.value || "").trim();
-    const kwp = (($("wxKwp")?.value || "").trim() || "10");
-    const tz  = (($("wxTz")?.value  || "").trim() || "UTC");
+    const lat = $("wxLat").value.trim();
+    const lon = $("wxLon").value.trim();
+    const kwp = $("wxKwp").value.trim() || "10";
+    const tz = $("wxTz").value.trim() || "UTC";
     const url = `/api/site/${encodeURIComponent(siteId)}/weather_cfg?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&pv_kwp=${encodeURIComponent(kwp)}&timezone=${encodeURIComponent(tz)}&pr=0.85`;
     try{
       setBoxMsg("wxMsg", `Saving ${url} …`);
       const r = await fetch(url, { method:"PUT" });
       if(!r.ok) throw new Error(`HTTP ${r.status}`);
       setBoxMsg("wxMsg", "Saved.", "ok");
-      if(selected === siteId){
-        wxFailUntil[siteId] = 0; // reset backoff
-        loadWeatherForSelected();
-      }
+      loadWeatherForSelected();
     }catch(e){
       setBoxMsg("wxMsg", `Save error: ${e.message}`, "err");
     }
   }
 
-  // ---------------------------
-  // WS
-  // ---------------------------
+  // ----- WS -----
   function connectWS(){
     try{
       const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -1509,228 +1434,212 @@ document.addEventListener("DOMContentLoaded", () => {
 
       ws = new WebSocket(wsUrl);
 
-      // watchdog
-      try{
-        const t0 = Date.now();
-        const setConn = (s)=>{ try{ const el=$("conn"); if(el) el.innerText = s; }catch(e){} };
-        setConn("WS: connecting…");
+// --- WS watchdog + debug ---
+try{
+  const _t0 = Date.now();
+  const _set = (s)=>{ try{ const el=document.getElementById("conn"); if(el) el.innerText = s; }catch(e){} };
 
-        const wd = setTimeout(() => {
-          try{
-            if(ws && ws.readyState === 0){
-              console.warn("[WS] still CONNECTING after 4s -> forcing close()");
-              setConn("WS: stuck (restarting)…");
-              ws.close();
-            }
-          }catch(e){}
-        }, 4000);
+  _set("WS: connecting…");
 
-        ws.addEventListener("open", () => {
-          clearTimeout(wd);
-          console.log("[WS] open in", (Date.now()-t0), "ms");
-        });
-      }catch(e){}
+  // Se resta in CONNECTING troppo a lungo, forziamo close -> vediamo onclose + reconnect
+  const _wd = setTimeout(() => {
+    try{
+      if(ws && ws.readyState === 0){
+        console.warn("[WS] still CONNECTING after 4s -> forcing close()");
+        _set("WS: stuck (restarting)…");
+        ws.close();
+      }
+    }catch(e){}
+  }, 4000);
+
+  ws.addEventListener("open", () => {
+    clearTimeout(_wd);
+    console.log("[WS] open in", (Date.now()-_t0), "ms"); _set("WS: connected"); });
+
+  ws.addEventListener("error", (ev) => {
+    console.warn("[WS] error event", ev);
+  });
+
+  ws.addEventListener("close", (ev) => {
+    console.warn("[WS] close", {code: ev.code, reason: ev.reason, wasClean: ev.wasClean, dt_ms:(Date.now()-_t0)});
+  });
+}catch(e){
+  console.warn("[WS] watchdog setup failed", e);
+}
 
       ws.onopen = () => {
-        const c = $("conn"); if(c) c.innerText = "WS: connected";
+        $("conn").innerText = "WS: connected";
         pushEvent("Connessione", "WebSocket status connesso.", "info");
       };
 
       ws.onerror = (e) => {
         console.warn("[WS] error", e);
-        const c = $("conn"); if(c) c.innerText = "WS: error";
+        $("conn").innerText = "WS: error";
         pushEvent("Connessione", "Errore WebSocket (vedi console).", "warn");
       };
 
       ws.onclose = () => {
-        const c = $("conn"); if(c) c.innerText = "WS: reconnecting…";
+        $("conn").innerText = "WS: reconnecting…";
         setTimeout(connectWS, 1200);
       };
 
       let _wsTimer = null;
       ws.onmessage = (ev) => {
-        try{
-          const j = JSON.parse(ev.data);
+  try{
+    const j = JSON.parse(ev.data);
 
-          let sites = null;
-          if(j && Array.isArray(j.sites)) sites = j.sites;
-          else if(j && j.data && Array.isArray(j.data.sites)) sites = j.data.sites;
-          else if(j && Array.isArray(j.data)) sites = j.data;
-          else if(j && j.payload && Array.isArray(j.payload.sites)) sites = j.payload.sites;
+    // --- accetta più formati ---
+    let sites = null;
+    if(j && Array.isArray(j.sites)) sites = j.sites;
+    else if(j && j.data && Array.isArray(j.data.sites)) sites = j.data.sites;
+    else if(j && Array.isArray(j.data)) sites = j.data;               // es: {type:"sites", data:[...]}
+    else if(j && j.payload && Array.isArray(j.payload.sites)) sites = j.payload.sites;
 
-          if(sites) sitesStatus = sites;
+    if(sites){
+      sitesStatus = sites;
+    }
 
-          try{
-            const known = (sitesStatus||[]).map(s=>({
-              site_id:String(s.site_id ?? s.id ?? s.site ?? ""),
-              online:(("ok" in s)?!!s.ok: ("online" in s)?!!s.online : true),
-              last_edge_status:(s.last_ts||s.ts||null)
-            })).filter(x=>x.site_id);
-            localStorage.setItem("knownSites", JSON.stringify(known.slice(0,200)));
-          }catch(e){}
+    // persisti elenco siti visto via WS
+    try{
+      const known = (sitesStatus||[]).map(s=>({
+        site_id:String(s.site_id ?? s.id ?? s.site ?? ""),
+        online:(("ok" in s)?!!s.ok: ("online" in s)?!!s.online : true),
+        last_edge_status:(s.last_ts||s.ts||null)
+      })).filter(x=>x.site_id);
+      localStorage.setItem("knownSites", JSON.stringify(known.slice(0,200)));
+    }catch(e){}
 
-          if(_wsTimer) return;
-          _wsTimer = setTimeout(async () => {
-            _wsTimer = null;
-
-            refreshSelectedKpi();
-
-            // aggiornamenti "autonomi" (throttled)
-            if(selected && !selectedDevice){
-              fetchPvLatestSum(selected);
-              fetchSeriesPV();
-            }
-            if(selected){
-              loadWeatherForSelected();
-              if(expandedSites[selected]) fetchDeviceStatus(selected);
-            }
-            renderSites();
-          }, 1200);
-
-        }catch(e){}
-      };
-
+    if(_wsTimer) return;
+    _wsTimer = setTimeout(() => {
+      _wsTimer = null;
+      refreshSelectedKpi();
+      if(selected && !selectedDevice) fetchSeriesPV();
+      if(selected) loadWeatherForSelected();
+      renderSites();
+    }, 1200);
+  }catch(e){}
+};
     }catch(e){
-      const c = $("conn"); if(c) c.innerText = "WS: init error";
+      $("conn").innerText = "WS: init error";
       pushEvent("Connessione", "Impossibile inizializzare WebSocket.", "err");
     }
-  }
+}
+  // ----- Bindings -----
+  $("q").addEventListener("input", renderSites);
+  window.addEventListener("resize", () => { if(chartPV) chartPV.resize(); if(chartInv) chartInv.resize(); if(chartWeather) chartWeather.resize(); });
 
-  // ---------------------------
-  // Inverter polling (UNICO)
-  // ---------------------------
-  let invPollTimer = null;
-  function stopInvPolling(){
-    if(invPollTimer){ clearInterval(invPollTimer); invPollTimer = null; }
-  }
-  function startInvPolling(){
-    stopInvPolling();
-    invPollTimer = setInterval(() => {
-      try{
-        if(selectedDevice && selectedDevice.site_id && selectedDevice.id){
-          renderInverter(selectedDevice.site_id, selectedDevice.id, selectedDevice.name);
-        }
-      }catch(e){}
-    }, 5000);
-  }
+  $("btnRefresh").addEventListener("click", () => { fetchSites(); if(selected && !selectedDevice) fetchSeriesPV(); if(selected) loadWeatherForSelected(); });
+  $("btnClearEvents").addEventListener("click", () => { $("events").innerHTML = ""; });
 
-  // ---------------------------
-  // Sites discovery
-  // ---------------------------
-  async function fetchSites(){
-    try{
-      const r = await fetch("/openapi.json", { cache: "no-store" });
-      const as = $("apiStatus"); if(as) as.innerText = `API: ${r.status}`;
-    }catch(e){
-      const as = $("apiStatus"); if(as) as.innerText = `API: err`;
-    }
+  $("mbAdd").addEventListener("click", mbAddEmpty);
 
-    allSites = (sitesStatus || []).map(s => ({
-      site_id: String(s.site_id),
-      online: (("ok" in s) ? !!s.ok : true),
-      last_edge_status: s.last_ts || null
-    }));
-
-    if(!allSites.length){
-      try{
-        const raw = localStorage.getItem("knownSites") || "[]";
-        const arr = JSON.parse(raw);
-        if(Array.isArray(arr)){
-          allSites = arr.map(x => ({
-            site_id: String(x.site_id),
-            online: !!x.online,
-            last_edge_status: x.last_edge_status || null
-          }));
-        }
-      }catch(e){}
-    }
-
-    try{ localStorage.setItem("knownSites", JSON.stringify(allSites.slice(0,200))); }catch(e){}
-
-    if(!selected && allSites.length){
-      const first = allSites[0].site_id;
-      if(Object.keys(expandedSites||{}).length === 0){
-        expandedSites[first] = true;
-        try{ localStorage.setItem("expandedSites", JSON.stringify(expandedSites)); }catch(e){}
-      }
-      await setSelected(first);
-    } else {
-      renderSites();
-    }
-  }
-
-  // ---------------------------
-  // Bindings
-  // ---------------------------
-  if($("q")) $("q").addEventListener("input", renderSites);
-
-  window.addEventListener("resize", () => {
-    if(chartPV) chartPV.resize();
-    if(chartInv) chartInv.resize();
-    if(chartWeather) chartWeather.resize();
-  });
-
-  if($("btnRefresh")) $("btnRefresh").addEventListener("click", async () => {
-    await fetchSites();
-    if(selected && !selectedDevice){
-      fetchPvLatestSum(selected);
-      fetchSeriesPV();
-    }
-    if(selected) loadWeatherForSelected();
-    if(selectedDevice) renderInverter(selectedDevice.site_id, selectedDevice.id, selectedDevice.name);
-  });
-
-  if($("btnClearEvents")) $("btnClearEvents").addEventListener("click", () => { if($("events")) $("events").innerHTML = ""; });
-
-  if($("mbAdd")) $("mbAdd").addEventListener("click", mbAddEmpty);
-
-  if($("btnLoadAll")) $("btnLoadAll").addEventListener("click", () => {
-    const siteId = ($("cfgSiteId")?.value || "").trim();
+  $("btnLoadAll").addEventListener("click", () => {
+    const siteId = $("cfgSiteId").value.trim();
     if(!siteId) return;
     mbLoad(siteId);
     wxLoad(siteId);
   });
 
-  if($("btnSaveAll")) $("btnSaveAll").addEventListener("click", () => {
-    const siteId = ($("cfgSiteId")?.value || "").trim();
+  $("btnSaveAll").addEventListener("click", () => {
+    const siteId = $("cfgSiteId").value.trim();
     if(!siteId) return;
     mbSave(siteId);
     wxSave(siteId);
   });
 
-  if($("wxLoad")) $("wxLoad").addEventListener("click", () => {
-    const siteId = ($("cfgSiteId")?.value || "").trim();
+  $("wxLoad").addEventListener("click", () => {
+    const siteId = $("cfgSiteId").value.trim();
     if(!siteId) return;
     wxLoad(siteId);
   });
 
-  if($("wxSave")) $("wxSave").addEventListener("click", () => {
-    const siteId = ($("cfgSiteId")?.value || "").trim();
+  $("wxSave").addEventListener("click", () => {
+    const siteId = $("cfgSiteId").value.trim();
     if(!siteId) return;
     wxSave(siteId);
   });
 
-  if($("wxShow")) $("wxShow").addEventListener("click", () => {
+  $("wxShow").addEventListener("click", () => {
     showWeatherPanel();
     closeDrawer();
   });
 
   // Boot
-  try{ const hl=$("hostLabel"); if(hl) hl.innerText = (location.host || "—"); }catch(e){}
-  pushEvent("Boot", "Dashboard avviata. In attesa di telemetria.", "info");
-
-  // prepara subito il KPI meteo con icona (evita “salti” UI)
-  try{ ensureWxIconHost(); setWxIcon("unknown"); setWxText("—"); }catch(e){}
-
+  $("hostLabel").innerText = location.host;
+  try{ $("hostLabel").innerText = location.host || "—"; }catch(e){}; pushEvent("Boot", "Dashboard avviata. In attesa di telemetria.", "info");
   fetchSites();
   connectWS();
   showPVView();
 });
+/* ===========================
+   Inverter data polling (latest + series)
+   =========================== */
+let __invPollTimer = null;
+let __selectedInv = { siteId: null, deviceId: null };
+
+async function refreshInverterData(siteId, deviceId){
+  if(!siteId || !deviceId) return;
+  try{
+    // latest
+    const r1 = await fetch(`/api/site/${encodeURIComponent(siteId)}/device/${encodeURIComponent(deviceId)}/latest`, { cache:"no-store" });
+    const latest = await r1.json();
+
+    // aggiorna card potenza / dettagli (se esistono gli elementi)
+    const p = latest?.fields?.p_ac_w;
+    if (typeof p === "number"){
+      const el = document.getElementById("inv_p_ac_w");
+      if(el) el.textContent = `${Math.round(p)} W`;
+    }
+    const ts = latest?.last_ts;
+    const elts = document.getElementById("inv_last_ts");
+    if(elts && ts) elts.textContent = ts;
+
+    // series per chart (30 min)
+    const r2 = await fetch(`/api/site/${encodeURIComponent(siteId)}/device/${encodeURIComponent(deviceId)}/series?minutes=30&every=10s`, { cache:"no-store" });
+    const series = await r2.json();
+
+    // se hai già una funzione che aggiorna il grafico, chiamala qui:
+    // esempio: updateInvChart(series)
+    if (typeof window.updateInvChart === "function") {
+      window.updateInvChart(series);
+    } else {
+      // fallback: se usi echarts e hai un'istanza globale "invChart"
+      if (window.invChart && series?.t?.length){
+        const x = series.t;
+        const y = series.p_ac_w || [];
+        window.invChart.setOption({
+          xAxis: { type: "category", data: x },
+          yAxis: { type: "value" },
+          series: [{ type: "line", data: y }]
+        });
+      }
+    }
+
+  } catch(e){
+    console.warn("refreshInverterData error:", e);
+  }
+}
+
+function selectInverter(siteId, deviceId){
+  __selectedInv = { siteId, deviceId };
+
+  // refresh immediato
+  refreshInverterData(siteId, deviceId);
+
+  // polling
+  if(__invPollTimer) clearInterval(__invPollTimer);
+  __invPollTimer = setInterval(() => refreshInverterData(__selectedInv.siteId, __selectedInv.deviceId), 5000);
+}
+
+// Hook: click su elementi con data-site-id e data-device-id (mettili dove renderizzi la lista inverter)
+document.addEventListener("click", (ev) => {
+  const t = ev.target?.closest?.("[data-site-id][data-device-id]");
+  if(!t) return;
+  const siteId = t.getAttribute("data-site-id");
+  const deviceId = t.getAttribute("data-device-id");
+  if(siteId && deviceId) selectInverter(siteId, deviceId);
+});
 </script>
-
-
-
-
 
 </body>
 </html>

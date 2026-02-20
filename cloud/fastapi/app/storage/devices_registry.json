@@ -4,7 +4,7 @@
     "PV_001": {
       "devices": [
         {
-          "id": "inv_1",
+          "id": "dev1",
           "name": "KACO_1",
           "host": "192.168.2.108",
           "port": 5020,
@@ -13,7 +13,7 @@
           "model": "sunspec"
         },
         {
-          "id": "inv_2",
+          "id": "dev2",
           "name": "KACO_2",
           "host": "192.168.2.108",
           "port": 5020,
@@ -40,6 +40,28 @@
     },
     "PV_002_OSLO": {
       "devices": []
+    },
+    "PV001": {
+      "devices": [
+        {
+          "id": "dev1",
+          "name": "KACO_1",
+          "host": "192.168.2.108",
+          "port": 5020,
+          "unit_id": 1,
+          "enabled": true,
+          "model": "sunspec"
+        },
+        {
+          "id": "dev2",
+          "name": "KACO_2",
+          "host": "192.168.2.108",
+          "port": 5020,
+          "unit_id": 2,
+          "enabled": true,
+          "model": "sunspec"
+        }
+      ]
     }
   }
 }

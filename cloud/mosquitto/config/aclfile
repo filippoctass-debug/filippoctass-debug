@@ -1,16 +1,24 @@
-user edge_pv_001
-topic readwrite pv/#
+# === AUTH ===
+allow_anonymous false
+password_file /mosquitto/config/passwords.txt
 
-user cr_ingest
-topic read pv/+/telemetry
-topic read pv/+/status
-topic read pv/+/modbus_status
-topic read pv/+/modbus_error
-topic readwrite pv/#
-user edge_pv_002
-topic readwrite pv/PV_001/#
-topic readwrite pv/PV_002/#
+# === TLS listener interno docker ===
+listener 8883
+protocol mqtt
 
+cafile /mosquitto/certs/ca.crt
+certfile /mosquitto/certs/server.crt
+keyfile /mosquitto/certs/server.key
 
-user edge_pv_002
-topic readwrite pv/#
+# Non richiedere certificato client (usiamo user/pass)
+require_certificate false
+use_identity_as_username false
+
+# (opzionale ma consigliato)
+tls_version tlsv1.2
+
+# ACL (ABILITALA se la usi davvero)
+acl_file /mosquitto/config/acl
+
+log_type all
+log_dest stdout

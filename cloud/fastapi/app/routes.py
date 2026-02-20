@@ -13,16 +13,24 @@ try:
 except Exception:
     weather_router = None
 
+try:
+    from app.pv_aggregate_api import router as pv_agg_router
+except Exception:
+    pv_agg_router = None
 
 router = APIRouter()
 
-# existing
+# Devices registry + status
 router.include_router(devices_router)
 
-# new: inverter data (Influx)
+# Inverter data (Influx)
 if device_data_router is not None:
-    router.include_router(device_data_router, prefix="/api")
+    router.include_router(device_data_router)
 
-# new: weather (Open-Meteo)
+# Weather (Open-Meteo)
 if weather_router is not None:
-    router.include_router(weather_router, prefix="/api")
+    router.include_router(weather_router)
+
+# PV aggregate (sum inverter under PV)
+if pv_agg_router is not None:
+    router.include_router(pv_agg_router)

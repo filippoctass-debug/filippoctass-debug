@@ -1,27 +1,21 @@
 ﻿services:
   edge-driver:
-    image: ghcr.io/filippoctass-debug/edge-driver:latest
+    build: .
+    image: edge-driver:local
     restart: always
     network_mode: host
-    labels:
-      - "com.centurylinklabs.watchtower.enable=true"
     env_file:
       - .env
+    volumes:
+      - ./certs:/certs:ro
+      - ./data:/app/data
 
   watchtower:
     image: containrrr/watchtower:1.7.1
     restart: always
     volumes:
-      - ./certs:/app/certs:ro
       - /var/run/docker.sock:/var/run/docker.sock
     command: >
       --label-enable
       --interval 30
       --cleanup
-
-
-
-
-
-
-
